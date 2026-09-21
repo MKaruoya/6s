@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
+import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
 import '../../styles/InternalAuditForm.css';
 import '../../styles/AuditForm.css';
 
@@ -10,6 +11,8 @@ const InternalAuditForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [showActionItemsModal, setShowActionItemsModal] = useState(false);
+  const [auditId, setAuditId] = useState(null);
 
   const auditData = auditCheckpoints.internal;
 
@@ -29,7 +32,6 @@ const InternalAuditForm = () => {
         criteria: {},
         comments: ''
       };
-
       section.criteria.forEach((criterion, idx) => {
         sections[section.code].criteria[idx] = {
           W1: '',
@@ -154,9 +156,7 @@ const InternalAuditForm = () => {
     setError(null);
 
     try {
-      // Calculate 6S scores
       const sixSScores = calculate6SScores();
-
       const auditPayload = {
         auditType: 'internal',
         location: formData.areaAudited,
@@ -167,19 +167,27 @@ const InternalAuditForm = () => {
         totalScore: calculateTotalAverage(),
         percentage: calculatePercentage(),
         sections: formData.sections,
-        sixSScores: sixSScores  // ADD 6S SCORES
+        sixSScores: sixSScores
       };
 
-      await saveAudit(auditPayload);
-
+      const response = await saveAudit(auditPayload);
       console.log('Internal audit saved successfully:', auditPayload);
-      setSuccess(true);
+      
+      // Store audit ID for action items
+      setAuditId(response.audit_id || response.id);
+      
       setLoading(false);
+      setShowActionItemsModal(true); // Show action items modal instead of success
     } catch (err) {
       setError(err.message || 'Failed to submit audit');
       console.error('Submit error:', err);
       setLoading(false);
     }
+  };
+
+  const handleActionItemsSuccess = () => {
+    setShowActionItemsModal(false);
+    setSuccess(true);
   };
 
   const handleNewAudit = () => {
@@ -192,6 +200,7 @@ const InternalAuditForm = () => {
       sections: {}
     });
     setSuccess(false);
+    setAuditId(null);
   };
 
   // STYLES
@@ -234,6 +243,31 @@ const InternalAuditForm = () => {
     transition: 'all 0.3s'
   };
 
+  const modalOverlayStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000
+  };
+
+  const modalStyle = {
+    background: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    maxWidth: '700px',
+    width: '90%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    border: '1px solid #E8EAED'
+  };
+
   return (
     <div className="internal-audit-wrapper">
       {/* FORM HEADER */}
@@ -243,11 +277,13 @@ const InternalAuditForm = () => {
             <h2>CAPWELL INDUSTRIES LIMITED</h2>
             <p>"The Home of Wholesome Brands"</p>
           </div>
+
           <div className="form-reference">
             <p><strong>Document:</strong> {auditData.code}</p>
             <p><strong>Revision:</strong> {auditData.revision}</p>
           </div>
         </div>
+
         <h1 className="form-title">{auditData.name}</h1>
         <p className="form-scope">Weekly Tracking Format</p>
       </div>
@@ -265,21 +301,21 @@ const InternalAuditForm = () => {
             
             <div className="metadata-grid">
               <div className="form-group">
-  <label>Area Audited *</label>
-  <select 
-    name="areaAudited" 
-    value={formData.areaAudited}
-    onChange={handleInputChange}
-    required
-  >
-    <option value="">-- Select Location --</option>
-    {locationsList.map(location => (
-      <option key={location} value={location}>
-        {location}
-      </option>
-    ))}
-  </select>
-</div>
+                <label>Area Audited *</label>
+                <select 
+                  name="areaAudited" 
+                  value={formData.areaAudited}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">-- Select Location --</option>
+                  {locationsList.map(location => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div className="form-group">
                 <label>Auditor *</label>
@@ -292,6 +328,7 @@ const InternalAuditForm = () => {
                   required
                 />
               </div>
+
               <div className="form-group">
                 <label>Audit Period Start *</label>
                 <input 
@@ -302,6 +339,7 @@ const InternalAuditForm = () => {
                   required
                 />
               </div>
+
               <div className="form-group">
                 <label>Audit Period End *</label>
                 <input 
@@ -483,9 +521,9 @@ const InternalAuditForm = () => {
         {success && (
           <div style={successScreenStyle}>
             <div style={checkmarkStyle}>✓</div>
-            <h2 style={successTitleStyle}>Audit Submitted Successfully</h2>
+            <h2 style={successTitleStyle}>Audit & Action Items Submitted</h2>
             <p style={successMessageStyle}>
-              Your internal audit has been recorded and saved.
+              Your internal audit and action items have been recorded successfully.
             </p>
             <button
               type="button"
@@ -516,6 +554,7 @@ const InternalAuditForm = () => {
             >
               ← Previous
             </button>
+
             <div className="step-indicator">
               {[1, 2, 3].map(step => (
                 <div 
@@ -525,6 +564,7 @@ const InternalAuditForm = () => {
                 />
               ))}
             </div>
+
             {currentStep < 3 ? (
               <button 
                 type="button" 
@@ -545,6 +585,23 @@ const InternalAuditForm = () => {
           </div>
         )}
       </form>
+
+      {/* ACTION ITEMS MODAL */}
+      {showActionItemsModal && auditId && (
+        <div style={modalOverlayStyle} onClick={() => setShowActionItemsModal(false)}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <CreateActionItemsFromAudit
+              auditId={auditId}
+              auditLocation={formData.areaAudited}
+              onClose={() => {
+                setShowActionItemsModal(false);
+                setSuccess(true);
+              }}
+              onSuccess={handleActionItemsSuccess}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

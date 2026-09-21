@@ -1,19 +1,19 @@
-import { supabase } from './supabaseClient';
+import API_URL from '../config/api';
 
 // Default org and user IDs
-const DEFAULT_ORG_ID = 'fb04f2f4-8cb8-4b3f-8041-133886194754';
-const DEFAULT_USER_ID = '550e8400-e29b-41d4-a716-446655440001';
-const DEFAULT_LOCATION_ID = '550e8400-e29b-41d4-a716-446655440000';
+const DEFAULT_ORG_ID = '6a7d9fcb-d111-4e5b-a437-0a5f17aae6c7';
+const DEFAULT_USER_ID = '0463b4f0-a094-4cff-9208-96d7645ed386'; // Mercy Karuoya
+const DEFAULT_LOCATION_ID = '29bd28cb-e261-47c0-8073-d70e2289b53d'; // Warehouse - Raw Materials
 
 // Audit type IDs mapped by audit type
 const AUDIT_TYPE_MAP = {
-  warehouse: '4c67665b-dd1f-43fa-87a5-a7d9477cf303',
-  shopfloor: 'bf0e6a59-a9b3-47f6-b6d5-18f0df806d45',
-  laboratory: 'e1d3647c-aa77-420b-b072-d131f7b1af6a',
-  internal: '5846ef78-480d-499f-92b1-ffdcc158fe93'
+  warehouse: 'bc2e176a-87b1-476a-babe-4ed1175156ec',
+  shopfloor: 'a3295ef5-082f-438a-8c2a-4c2eb4eb4a5f',
+  laboratory: '96f8d592-5130-4277-beb3-66a4ef110064',
+  internal: '537051a8-32b7-48ec-a685-6966808f426a'
 };
 
-// Save audit to Supabase
+// Save audit to backend
 export const saveAudit = async (auditData) => {
   try {
     // Get the correct audit type ID based on audit type
@@ -28,7 +28,7 @@ export const saveAudit = async (auditData) => {
       teamName: auditData.teamName,
       areaAudited: auditData.areaAudited,
       sections: auditData.sections,
-      sixSScores: auditData.sixSScores || {}  // EXPLICITLY ADD 6S SCORES
+      sixSScores: auditData.sixSScores || {}
     };
 
     // Prepare the audit record
@@ -42,27 +42,36 @@ export const saveAudit = async (auditData) => {
       status: 'submitted',
       total_score: auditData.totalScore || 0,
       percentage_score: auditData.percentage || 0,
-      notes: JSON.stringify(notesData),  // CLEAN JSON WITH sixSScores
+      notes: JSON.stringify(notesData),
       submitted_at: new Date().toISOString()
     };
 
     console.log('Saving audit record:', auditRecord);
     console.log('6S Scores being saved:', auditData.sixSScores);
 
-    const { data, error } = await supabase
-      .from('audits')
-      .insert([auditRecord])
-      .select();
+    // Call backend API using API_URL config
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/audits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(auditRecord)
+    });
 
-    if (error) {
-      console.error('Supabase error:', error);
-      throw new Error(error.message || 'Failed to save audit');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to save audit');
     }
 
+    const data = await response.json();
     console.log('Audit saved successfully:', data);
     return data;
+
   } catch (err) {
     console.error('Save audit error:', err);
+    console.error('Error message:', err.message);
     throw err;
   }
 };
@@ -70,17 +79,20 @@ export const saveAudit = async (auditData) => {
 // Get all audits
 export const getAudits = async () => {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .order('audit_date', { ascending: false });
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/audits`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-    if (error) {
-      console.error('Error fetching audits:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error('Failed to fetch audits');
     }
 
-    return data || [];
+    const data = await response.json();
+    return data.data || data || [];
+
   } catch (err) {
     console.error('Get audits error:', err);
     return [];
@@ -90,15 +102,20 @@ export const getAudits = async () => {
 // Get audits by location (gemba)
 export const getAuditsByLocation = async (location) => {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .eq('team_name', location)
-      .order('audit_date', { ascending: false });
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/audits?teamName=${encodeURIComponent(location)}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-    if (error) throw error;
+    if (!response.ok) {
+      throw new Error('Failed to fetch audits by location');
+    }
 
-    return data || [];
+    const data = await response.json();
+    return data.data || data || [];
+
   } catch (err) {
     console.error('Get audits by location error:', err);
     return [];
@@ -109,18 +126,44 @@ export const getAuditsByLocation = async (location) => {
 export const getAuditsByType = async (auditType) => {
   try {
     const auditTypeId = AUDIT_TYPE_MAP[auditType];
-    
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .eq('audit_type_id', auditTypeId)
-      .order('audit_date', { ascending: false });
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/audits?auditTypeId=${auditTypeId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-    if (error) throw error;
+    if (!response.ok) {
+      throw new Error('Failed to fetch audits by type');
+    }
 
-    return data || [];
+    const data = await response.json();
+    return data.data || data || [];
+
   } catch (err) {
     console.error('Get audits by type error:', err);
     return [];
+  }
+};
+
+// Get single audit
+export const getAuditById = async (auditId) => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/audits/${auditId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch audit');
+    }
+
+    return await response.json();
+
+  } catch (err) {
+    console.error('Get audit by ID error:', err);
+    throw err;
   }
 };

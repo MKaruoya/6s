@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -9,10 +10,15 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
+const authRoutes = require('./routes/auth');
 const auditRoutes = require('./routes/audits');
 const userRoutes = require('./routes/users');
 const roleRoutes = require('./routes/roles');
 const locationRoutes = require('./routes/locations');
+const actionItemRoutes = require('./routes/actionItems');
+
+// Auth Routes
+app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -28,6 +34,26 @@ app.use('/api/audits', auditRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/locations', locationRoutes);
+app.use('/api/action-items', actionItemRoutes);
+
+// ==================== SERVE FRONTEND ====================
+
+// Serve static files from frontend build
+app.use(express.static(path.join(__dirname, '../frontend/build')));
+
+// Serve index.html for root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
+});
+
+// Catch-all for React Router - must be AFTER all API routes
+app.use((req, res) => {
+  // Don't serve index.html for API routes
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
+});
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -35,12 +61,18 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+const PORT = process.env.PORT || 5001;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+  console.log(`📱 Access from phone: http://YOUR_IP:${PORT}`);
+  console.log(`💻 Local access: http://localhost:${PORT}`);
+  console.log('');
+  console.log('API Endpoints:');
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📋 Audits API: http://localhost:${PORT}/api/audits`);
   console.log(`👥 Users API: http://localhost:${PORT}/api/users`);
   console.log(`🔐 Roles API: http://localhost:${PORT}/api/roles`);
   console.log(`📍 Locations API: http://localhost:${PORT}/api/locations`);
+  console.log(`✓ Action Items API: http://localhost:${PORT}/api/action-items`);
 });

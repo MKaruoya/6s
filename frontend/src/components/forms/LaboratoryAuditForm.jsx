@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
+import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
 import '../../styles/AuditForm.css';
 
 const LaboratoryAuditForm = () => {
@@ -9,6 +10,8 @@ const LaboratoryAuditForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [showActionItemsModal, setShowActionItemsModal] = useState(false);
+  const [auditId, setAuditId] = useState(null);
 
   const auditData = auditCheckpoints.laboratory;
 
@@ -92,20 +95,17 @@ const LaboratoryAuditForm = () => {
     return Math.round((total / auditData.maxScore) * 100 * 100) / 100;
   };
 
-  // Calculate 6S scores for storage
   // Calculate 6S scores for storage (as percentages)
-const calculate6SScores = () => {
-  const sixSScores = {};
-  auditData.sections.forEach(section => {
-    const sectionScore = calculateSectionScore(section.code);
-    const maxPoints = section.maxPoints;
-    // Convert to percentage
-    const percentage = maxPoints > 0 ? Math.round((sectionScore / maxPoints) * 100) : 0;
-    sixSScores[section.code] = percentage;
-  });
-  return sixSScores;
-};
-
+  const calculate6SScores = () => {
+    const sixSScores = {};
+    auditData.sections.forEach(section => {
+      const sectionScore = calculateSectionScore(section.code);
+      const maxPoints = section.maxPoints;
+      const percentage = maxPoints > 0 ? Math.round((sectionScore / maxPoints) * 100) : 0;
+      sixSScores[section.code] = percentage;
+    });
+    return sixSScores;
+  };
 
   // HANDLERS
   const handleInputChange = (e) => {
@@ -159,9 +159,7 @@ const calculate6SScores = () => {
     setError(null);
 
     try {
-      // Calculate 6S scores
       const sixSScores = calculate6SScores();
-
       const auditPayload = {
         auditType: 'laboratory',
         location: formData.gemba,
@@ -171,19 +169,27 @@ const calculate6SScores = () => {
         totalScore: calculateTotalScore(),
         percentage: calculatePercentage(),
         sections: formData.sections,
-        sixSScores: sixSScores  // ADD 6S SCORES
+        sixSScores: sixSScores
       };
 
-      await saveAudit(auditPayload);
-
+      const response = await saveAudit(auditPayload);
       console.log('Laboratory audit saved successfully:', auditPayload);
-      setSuccess(true);
+      
+      // Store audit ID for action items
+      setAuditId(response.audit_id || response.id);
+      
       setLoading(false);
+      setShowActionItemsModal(true); // Show action items modal instead of success
     } catch (err) {
       setError(err.message || 'Failed to submit audit');
       console.error('Submit error:', err);
       setLoading(false);
     }
+  };
+
+  const handleActionItemsSuccess = () => {
+    setShowActionItemsModal(false);
+    setSuccess(true);
   };
 
   const handleNewAudit = () => {
@@ -195,6 +201,7 @@ const calculate6SScores = () => {
       sections: {}
     });
     setSuccess(false);
+    setAuditId(null);
   };
 
   // STYLES
@@ -237,6 +244,31 @@ const calculate6SScores = () => {
     transition: 'all 0.3s'
   };
 
+  const modalOverlayStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000
+  };
+
+  const modalStyle = {
+    background: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    maxWidth: '700px',
+    width: '90%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    border: '1px solid #E8EAED'
+  };
+
   return (
     <div className="audit-form-wrapper">
       {/* FORM HEADER */}
@@ -246,11 +278,13 @@ const calculate6SScores = () => {
             <h2>CAPWELL INDUSTRIES LIMITED</h2>
             <p>"The Home of Wholesome Brands"</p>
           </div>
+
           <div className="form-reference">
             <p><strong>Document:</strong> {auditData.code}</p>
             <p><strong>Revision:</strong> {auditData.revision}</p>
           </div>
         </div>
+
         <h1 className="form-title">{auditData.name}</h1>
         <p className="form-scope">Scope: {auditData.scope}</p>
         <p className="scoring-criteria">Scoring Criteria: {auditData.scoringCriteria}</p>
@@ -269,21 +303,22 @@ const calculate6SScores = () => {
             
             <div className="metadata-grid">
               <div className="form-group">
-  <label>GEMBA (Laboratory) *</label>
-  <select 
-    name="gemba" 
-    value={formData.gemba}
-    onChange={handleInputChange}
-    required
-  >
-    <option value="">-- Select Location --</option>
-    {locationsList.map(location => (
-      <option key={location} value={location}>
-        {location}
-      </option>
-    ))}
-  </select>
-</div>
+                <label>GEMBA (Laboratory) *</label>
+                <select 
+                  name="gemba" 
+                  value={formData.gemba}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">-- Select Location --</option>
+                  {locationsList.map(location => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="form-group">
                 <label>AUDITOR(S) *</label>
                 <input 
@@ -295,6 +330,7 @@ const calculate6SScores = () => {
                   required
                 />
               </div>
+
               <div className="form-group">
                 <label>DATE *</label>
                 <input 
@@ -441,9 +477,9 @@ const calculate6SScores = () => {
         {success && (
           <div style={successScreenStyle}>
             <div style={checkmarkStyle}>✓</div>
-            <h2 style={successTitleStyle}>Audit Submitted Successfully</h2>
+            <h2 style={successTitleStyle}>Audit & Action Items Submitted</h2>
             <p style={successMessageStyle}>
-              Your laboratory audit has been recorded and saved.
+              Your laboratory audit and action items have been recorded successfully.
             </p>
             <button
               type="button"
@@ -474,6 +510,7 @@ const calculate6SScores = () => {
             >
               ← Previous
             </button>
+
             <div className="step-indicator">
               {[1, 2, 3, 4, 5].map(step => (
                 <div 
@@ -483,6 +520,7 @@ const calculate6SScores = () => {
                 />
               ))}
             </div>
+
             {currentStep < 5 ? (
               <button 
                 type="button" 
@@ -503,6 +541,23 @@ const calculate6SScores = () => {
           </div>
         )}
       </form>
+
+      {/* ACTION ITEMS MODAL */}
+      {showActionItemsModal && auditId && (
+        <div style={modalOverlayStyle} onClick={() => setShowActionItemsModal(false)}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <CreateActionItemsFromAudit
+              auditId={auditId}
+              auditLocation={formData.gemba}
+              onClose={() => {
+                setShowActionItemsModal(false);
+                setSuccess(true);
+              }}
+              onSuccess={handleActionItemsSuccess}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

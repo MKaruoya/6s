@@ -1,167 +1,170 @@
+/**
+ * CAPWELL 6S AUDIT MANAGEMENT SYSTEM
+ * User Management Routes
+ */
+
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabase');
+const pool = require('../config/database');
+const jwt = require('jsonwebtoken');
 
-// Get all users
-router.get('/', async (req, res) => {
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+
+// ==================== MIDDLEWARE ====================
+
+function authMiddleware(req, res, next) {
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select(`
-        user_id,
-        email,
-        name,
-        is_active,
-        roles(role_name),
-        locations(location_name)
-      `)
-      .order('created_at', { ascending: false });
+    const token = req.headers.authorization?.split(' ')[1];
 
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error('Error fetching users:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get user by ID
-router.get('/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const { data, error } = await supabase
-      .from('users')
-      .select(`
-        user_id,
-        email,
-        name,
-        is_active,
-        role_id,
-        location_id,
-        roles(role_name),
-        locations(location_name)
-      `)
-      .eq('user_id', userId)
-      .single();
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error('Error fetching user:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Create user
-router.post('/', async (req, res) => {
-  try {
-    const { email, name, role_id, location_id, org_id } = req.body;
-
-    if (!email || !name || !role_id) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
     }
 
-    const { data, error } = await supabase
-      .from('users')
-      .insert([{
-        org_id,
-        email,
-        name,
-        role_id,
-        location_id,
-        is_active: true
-      }])
-      .select();
-
-    if (error) throw error;
-
-    res.status(201).json(data[0]);
-  } catch (err) {
-    console.error('Error creating user:', err);
-    res.status(500).json({ error: err.message });
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid token' });
   }
-});
+}
 
-// Update user
-router.put('/:userId', async (req, res) => {
+function roleMiddleware(allowedRoles) {
+  return (req, res, next) => {
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    next();
+  };
+}
+
+// ==================== GET ALL USERS ====================
+router.get('/', authMiddleware, roleMiddleware(['admin', 'coordinator']), async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { email, name, role_id, location_id, is_active } = req.body;
-
-    const { data, error } = await supabase
-      .from('users')
-      .update({
-        email,
-        name,
-        role_id,
-        location_id,
+    const result = await pool.query(
+      `SELECT 
+        user_id, 
+        email, 
+        name, 
+        role, 
+        location_id, 
         is_active,
-        updated_at: new Date().toISOString()
+        created_at
+      FROM users 
+      WHERE org_id = $1
+      ORDER BY created_at DESC`,
+      [req.user.org_id]
+    );
+
+    // Get gembas for each user
+    const users = await Promise.all(
+      result.rows.map(async (user) => {
+        const gembaResult = await pool.query(
+          'SELECT gemba_name FROM user_gembas WHERE user_id = $1',
+          [user.user_id]
+        );
+        return {
+          ...user,
+          gembas: gembaResult.rows.map(row => row.gemba_name)
+        };
       })
-      .eq('user_id', userId)
-      .select();
+    );
 
-    if (error) throw error;
-
-    res.json(data[0]);
-  } catch (err) {
-    console.error('Error updating user:', err);
-    res.status(500).json({ error: err.message });
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Delete user
-router.delete('/:userId', async (req, res) => {
+// ==================== GET SINGLE USER ====================
+router.get('/:userId', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('user_id', userId);
+    const result = await pool.query(
+      'SELECT user_id, email, name, role, location_id, is_active FROM users WHERE user_id = $1 AND org_id = $2',
+      [userId, req.user.org_id]
+    );
 
-    if (error) throw error;
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = result.rows[0];
+
+    // Get gembas
+    const gembaResult = await pool.query(
+      'SELECT gemba_name FROM user_gembas WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({
+      ...user,
+      gembas: gembaResult.rows.map(row => row.gemba_name)
+    });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ==================== UPDATE USER ====================
+router.put('/:userId', authMiddleware, roleMiddleware(['admin', 'coordinator']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, role, location_id, gembas } = req.body;
+
+    // Update user
+    await pool.query(
+      `UPDATE users 
+       SET name = $1, role = $2, location_id = $3, updated_at = CURRENT_TIMESTAMP 
+       WHERE user_id = $4 AND org_id = $5`,
+      [name, role, location_id || null, userId, req.user.org_id]
+    );
+
+    // Update gembas if provided
+    if (gembas && Array.isArray(gembas)) {
+      // Delete existing gembas
+      await pool.query('DELETE FROM user_gembas WHERE user_id = $1', [userId]);
+
+      // Add new gembas
+      for (const gemba of gembas) {
+        await pool.query(
+          'INSERT INTO user_gembas (user_id, gemba_name) VALUES ($1, $2)',
+          [userId, gemba]
+        );
+      }
+    }
+
+    res.json({ message: 'User updated successfully' });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ==================== DELETE USER ====================
+router.delete('/:userId', authMiddleware, roleMiddleware(['admin', 'coordinator']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Check if user exists
+    const result = await pool.query(
+      'SELECT user_id FROM users WHERE user_id = $1 AND org_id = $2',
+      [userId, req.user.org_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete user (cascades to user_gembas)
+    await pool.query('DELETE FROM users WHERE user_id = $1', [userId]);
 
     res.json({ message: 'User deleted successfully' });
-  } catch (err) {
-    console.error('Error deleting user:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get user permissions
-router.get('/:userId/permissions', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    // Get user's role
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('role_id')
-      .eq('user_id', userId)
-      .single();
-
-    if (userError) throw userError;
-
-    // Get role's permissions
-    const { data: permissions, error: permError } = await supabase
-      .from('role_permissions')
-      .select(`
-        permissions(permission_name)
-      `)
-      .eq('role_id', userData.role_id);
-
-    if (permError) throw permError;
-
-    const permissionNames = permissions.map(p => p.permissions.permission_name);
-
-    res.json({ permissions: permissionNames });
-  } catch (err) {
-    console.error('Error fetching permissions:', err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

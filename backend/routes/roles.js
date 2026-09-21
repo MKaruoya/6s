@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabase');
+// const { supabase } = require('../config/supabase');
+const pool = require('../config/database');
 
 // Get all roles
 router.get('/', async (req, res) => {

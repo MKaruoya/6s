@@ -1,0 +1,181 @@
+/* CAPWELL INDUSTRIES BRAND THEME - BALANCED */
+
+:root {
+  /* Primary Colors - Professional Dark/Light */
+  --capwell-primary: #2C3E50;
+  --capwell-secondary: #34495E;
+  --capwell-accent: #FFD54F;
+  --capwell-accent-dark: #FFC947;
+  --capwell-white: #FFFFFF;
+  --capwell-dark: #1A1A1A;
+
+  /* Neutral Colors */
+  --capwell-light-gray: #F5F7FA;
+  --capwell-medium-gray: #E8EAED;
+  --capwell-dark-gray: #757575;
+  --capwell-charcoal: #424242;
+
+  /* Status Colors */
+  --capwell-success: #27AE60;
+  --capwell-warning: #E67E22;
+  --capwell-error: #E74C3C;
+  --capwell-info: #3498DB;
+
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-medium: 0 4px 6px rgba(0, 0, 0, 0.15);
+  --shadow-heavy: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--capwell-light-gray);
+  color: var(--capwell-dark);
+  line-height: 1.6;
+}
+
+/* Buttons */
+.btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-light);
+}
+
+.btn-primary {
+  background: var(--capwell-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--capwell-secondary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-medium);
+}
+
+.btn-accent {
+  background: var(--capwell-accent);
+  color: var(--capwell-dark);
+}
+
+.btn-accent:hover {
+  background: var(--capwell-accent-dark);
+  transform: translateY(-2px);
+}
+
+.btn-success {
+  background: var(--capwell-success);
+  color: white;
+}
+
+.btn-error {
+  background: var(--capwell-error);
+  color: white;
+}
+
+/* Cards */
+.card {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-light);
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-medium);
+  transform: translateY(-2px);
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: rgba(39, 174, 96, 0.1);
+  color: var(--capwell-success);
+}
+
+.badge-warning {
+  background: rgba(230, 126, 34, 0.1);
+  color: var(--capwell-warning);
+}
+
+.badge-error {
+  background: rgba(231, 76, 60, 0.1);
+  color: var(--capwell-error);
+}
+
+/* Inputs */
+input, textarea, select {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--capwell-medium-gray);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--capwell-accent);
+  box-shadow: 0 0 0 3px rgba(255, 213, 79, 0.1);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--capwell-primary);
+  font-weight: 700;
+  margin-bottom: var(--spacing-md);
+}
+
+h1 { font-size: 32px; }
+h2 { font-size: 24px; }
+h3 { font-size: 20px; }
+h4 { font-size: 18px; }
+h5 { font-size: 16px; }
+h6 { font-size: 14px; }
+
+/* Utility Classes */
+.text-primary { color: var(--capwell-primary); }
+.text-accent { color: var(--capwell-accent); }
+.text-success { color: var(--capwell-success); }
+.text-warning { color: var(--capwell-warning); }
+.text-error { color: var(--capwell-error); }
+
+.bg-primary { background: var(--capwell-primary); }
+.bg-accent { background: var(--capwell-accent); }
+.bg-light { background: var(--capwell-light-gray); }
+.bg-white { background: white; }
+
+.border-primary { border: 1px solid var(--capwell-primary); }
+.border-accent { border: 1px solid var(--capwell-accent); }
+.border-light { border: 1px solid var(--capwell-medium-gray); }

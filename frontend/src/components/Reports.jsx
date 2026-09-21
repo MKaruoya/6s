@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { getAudits } from '../services/auditService';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -21,7 +21,9 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  ReferenceLine,
+  ComposedChart
 } from 'recharts';
 
 const AUDIT_TYPE_MAP = {
@@ -40,15 +42,17 @@ const SIX_S_CATEGORIES = [
   { code: '6S', name: 'Safety (Kusitirisha)' }
 ];
 
+const TARGET_SCORE = 80;
 
 const Reports = () => {
   const [audits, setAudits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeReport, setActiveReport] = useState('audit');
-  const [selectedAuditId, setSelectedAuditId] = useState('');
+  const [activeReport, setActiveReport] = useState('monthVsMonth');
   const [selectedLocation, setSelectedLocation] = useState('');
-
+  const [filterDateRange, setFilterDateRange] = useState('all');
+  const [filterFromDate, setFilterFromDate] = useState('');
+  const [filterToDate, setFilterToDate] = useState('');
 
   const auditTypeLabels = {
     warehouse: 'Warehouse',
@@ -63,7 +67,6 @@ const Reports = () => {
       try {
         setLoading(true);
         const data = await getAudits();
-        console.log('Raw audits from API:', data.length);
 
         const transformedAudits = data.map(audit => {
           let auditorName = 'Auditor';
@@ -74,7 +77,6 @@ const Reports = () => {
             auditorName = notes.auditors || 'Auditor';
             sixSScores = notes.sixSScores || {};
           } catch (e) {
-            console.warn('Notes is not JSON:', audit.notes);
             auditorName = audit.notes || 'Auditor';
             sixSScores = {};
           }
@@ -94,7 +96,6 @@ const Reports = () => {
           };
         });
 
-        console.log('Transformed audits:', transformedAudits.length);
         setAudits(transformedAudits);
         setError(null);
       } catch (err) {
@@ -111,7 +112,458 @@ const Reports = () => {
 
   const locations = [...new Set(audits.map(a => a.location))].sort();
 
-  // Export to PDF with html2canvas
+  // ==================== DATE FILTERING ====================
+
+  const getFilteredAudits = () => {
+    return audits.filter(audit => {
+      const auditDate = new Date(audit.date);
+      const today = new Date();
+
+      if (filterDateRange === 'all') {
+        return true;
+      } else if (filterDateRange === '1month') {
+        const oneMonthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+        return auditDate >= oneMonthAgo;
+      } else if (filterDateRange === '3months') {
+        const threeMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate());
+        return auditDate >= threeMonthsAgo;
+      } else if (filterDateRange === '6months') {
+        const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 6, today.getDate());
+        return auditDate >= sixMonthsAgo;
+      } else if (filterDateRange === '1year') {
+        const oneYearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+        return auditDate >= oneYearAgo;
+      } else if (filterDateRange === 'custom') {
+        let match = true;
+        if (filterFromDate) {
+          match = match && auditDate >= new Date(filterFromDate);
+        }
+        if (filterToDate) {
+          match = match && auditDate <= new Date(filterToDate);
+        }
+        return match;
+      }
+
+      return true;
+    });
+  };
+
+  // ==================== DATA PROCESSING ====================
+
+  const getMonthYear = (dateStr) => {
+    const date = new Date(dateStr);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const getMonthVsMonthData = () => {
+    const filteredAudits = getFilteredAudits();
+    const monthData = {};
+
+    filteredAudits.forEach(audit => {
+      const monthYear = getMonthYear(audit.date);
+      if (!monthData[monthYear]) {
+        monthData[monthYear] = { month: monthYear, scores: [] };
+      }
+      monthData[monthYear].scores.push(audit.percentage);
+    });
+
+    return Object.values(monthData)
+      .map(item => ({
+        month: item.month,
+        average: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length),
+        target: TARGET_SCORE
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  };
+
+  const getAverageVsTargetData = () => {
+    const filteredAudits = getFilteredAudits();
+    const monthData = {};
+
+    filteredAudits.forEach(audit => {
+      const monthYear = getMonthYear(audit.date);
+      if (!monthData[monthYear]) {
+        monthData[monthYear] = { month: monthYear, scores: [] };
+      }
+      monthData[monthYear].scores.push(audit.percentage);
+    });
+
+    return Object.values(monthData)
+      .map(item => ({
+        month: item.month,
+        average: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length),
+        target: TARGET_SCORE,
+        status: Math.round(item.scores.reduce((a, b) => a + b, 0) / item.scores.length) >= TARGET_SCORE ? 'Met' : 'Below'
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  };
+
+  const getEnhancedRadarData = (auditList) => {
+    return SIX_S_CATEGORIES.map(category => {
+      const scores = auditList
+        .map(a => a.sixSScores[category.code] || 0)
+        .filter(s => s > 0);
+
+      const average = scores.length > 0 
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : 0;
+
+      return {
+        name: category.code,
+        fullName: category.name,
+        value: average,
+        percentage: `${average}%`
+      };
+    });
+  };
+
+  const getLocationRadarData = (location) => {
+    const filteredAudits = getFilteredAudits();
+    const locationAudits = filteredAudits.filter(a => a.location === location);
+    return getEnhancedRadarData(locationAudits);
+  };
+
+  const getOverallRadarData = () => {
+    const filteredAudits = getFilteredAudits();
+    return getEnhancedRadarData(filteredAudits);
+  };
+
+  // ==================== REPORT COMPONENTS ====================
+
+  const EnhancedRadarChart = ({ data, title }) => {
+    return (
+      <div style={reportSectionStyle}>
+        <div style={reportSectionTitleStyle}>{title}</div>
+        <div style={{ background: '#F5F7FA', padding: '16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #E8EAED' }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart data={data}>
+              <PolarGrid stroke="#E8EAED" strokeDasharray="3 3" />
+              <PolarAngleAxis 
+                dataKey="fullName" 
+                stroke="#2C3E50"
+                tick={{ fontSize: 11, fontWeight: 600 }}
+              />
+              <PolarRadiusAxis 
+                angle={90} 
+                domain={[0, 100]} 
+                stroke="#999"
+                tick={{ fontSize: 10 }}
+              />
+              <Radar 
+                name="Score %" 
+                dataKey="value" 
+                stroke="#2C3E50" 
+                fill="#FFD54F" 
+                fillOpacity={0.6}
+                strokeWidth={2}
+              />
+              <Tooltip 
+                formatter={(value, name, props) => [
+                  `${value}%`,
+                  props.payload.fullName
+                ]}
+                contentStyle={{
+                  background: 'white',
+                  border: '1px solid #E8EAED',
+                  borderRadius: '6px',
+                  padding: '8px',
+                  fontSize: '12px'
+                }}
+              />
+              <Legend />
+            </RadarChart>
+          </ResponsiveContainer>
+
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#2C3E50', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Scores:
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+              {data.map(item => (
+                <div key={item.name} style={{
+                  background: 'white',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: '1px solid #E8EAED',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#2C3E50' }}>
+                    {item.name}
+                  </div>
+                  <div style={{ fontSize: '16px', fontWeight: '800', color: '#FFD54F', marginTop: '4px' }}>
+                    {item.percentage}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const DateFilterComponent = () => {
+    return (
+      <div style={{ background: 'white', padding: '16px', borderRadius: '8px', marginBottom: '20px', border: '1px solid #E8EAED', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#2C3E50', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+          Date Range
+        </h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+          <div style={formGroupStyle}>
+            <label style={labelStyle}>Period</label>
+            <select
+              value={filterDateRange}
+              onChange={(e) => setFilterDateRange(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="all">All Time</option>
+              <option value="1month">Last 1 Month</option>
+              <option value="3months">Last 3 Months</option>
+              <option value="6months">Last 6 Months</option>
+              <option value="1year">Last 1 Year</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+
+        {filterDateRange === 'custom' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>From</label>
+              <input
+                type="date"
+                value={filterFromDate}
+                onChange={(e) => setFilterFromDate(e.target.value)}
+                style={selectStyle}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>To</label>
+              <input
+                type="date"
+                value={filterToDate}
+                onChange={(e) => setFilterToDate(e.target.value)}
+                style={selectStyle}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const MonthVsMonthReport = () => {
+    const data = getMonthVsMonthData();
+
+    return (
+      <div id="month-vs-month-report" style={reportPreviewStyle}>
+        <div style={reportHeaderStyle}>
+          <div style={reportTitleStyle}>Month vs Month Performance</div>
+          <div style={reportSubtitleStyle}>All Locations - Target: {TARGET_SCORE}%</div>
+          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
+        </div>
+
+        <div style={reportSectionStyle}>
+          <div style={reportSectionTitleStyle}>Monthly Average Score</div>
+          <div style={{ background: '#F5F7FA', padding: '16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #E8EAED' }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={data}>
+                <CartesianGrid stroke="#E8EAED" strokeDasharray="3 3" />
+                <XAxis dataKey="month" stroke="#999" tick={{ fontSize: 10 }} />
+                <YAxis stroke="#999" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Tooltip 
+                  contentStyle={{
+                    background: 'white',
+                    border: '1px solid #E8EAED',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Legend />
+                <ReferenceLine 
+                  y={TARGET_SCORE} 
+                  stroke="#E74C3C" 
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  label={{ value: `Target: ${TARGET_SCORE}%`, position: 'right', fill: '#E74C3C', fontSize: 10 }}
+                />
+                <Bar 
+                  dataKey="average" 
+                  fill="#FFD54F" 
+                  stroke="none"
+                  name="Average Score"
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Summary Table */}
+        <div style={reportSectionStyle}>
+          <div style={reportSectionTitleStyle}>Summary</div>
+          <div style={tableStyle}>
+            <div style={{ ...tableRowStyle, background: '#F5F7FA', fontWeight: '700', borderBottom: '2px solid #E8EAED' }}>
+              <div style={tableColStyle}>Month</div>
+              <div style={tableColStyle}>Average</div>
+              <div style={tableColStyle}>Target</div>
+              <div style={tableColStyle}>Status</div>
+            </div>
+
+            {data.map(item => (
+              <div key={item.month} style={tableRowStyle}>
+                <div style={tableColStyle}>{item.month}</div>
+                <div style={{ ...tableColStyle, fontWeight: '700', color: '#FFD54F' }}>{item.average}%</div>
+                <div style={tableColStyle}>{item.target}%</div>
+                <div style={{
+                  ...tableColStyle,
+                  fontWeight: '700',
+                  color: item.average >= TARGET_SCORE ? '#27AE60' : '#E74C3C'
+                }}>
+                  {item.average >= TARGET_SCORE ? 'Met' : 'Below'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={reportFooterStyle}>
+          <div>Generated on {new Date().toLocaleString()}</div>
+          <div>CAPWELL INDUSTRIES LIMITED</div>
+        </div>
+      </div>
+    );
+  };
+
+  const AverageVsTargetReport = () => {
+    const data = getAverageVsTargetData();
+
+    return (
+      <div id="average-vs-target-report" style={reportPreviewStyle}>
+        <div style={reportHeaderStyle}>
+          <div style={reportTitleStyle}>Average vs Target</div>
+          <div style={reportSubtitleStyle}>All Months - Target: {TARGET_SCORE}%</div>
+          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
+        </div>
+
+        <div style={reportSectionStyle}>
+          <div style={reportSectionTitleStyle}>Performance</div>
+          <div style={{ background: '#F5F7FA', padding: '16px', borderRadius: '6px', marginBottom: '16px', border: '1px solid #E8EAED' }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={data}>
+                <CartesianGrid stroke="#E8EAED" strokeDasharray="3 3" />
+                <XAxis dataKey="month" stroke="#999" tick={{ fontSize: 10 }} />
+                <YAxis stroke="#999" domain={[0, 100]} tick={{ fontSize: 10 }} />
+                <Tooltip 
+                  contentStyle={{
+                    background: 'white',
+                    border: '1px solid #E8EAED',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Legend />
+                <ReferenceLine 
+                  y={TARGET_SCORE} 
+                  stroke="#E74C3C" 
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  label={{ value: `Target: ${TARGET_SCORE}%`, position: 'right', fill: '#E74C3C', fontSize: 10 }}
+                />
+                <Bar 
+                  dataKey="average" 
+                  fill="#FFD54F" 
+                  stroke="none"
+                  name="Average Score"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Summary Stats */}
+        <div style={reportCardsGridStyle}>
+          <div style={reportCardStyle}>
+            <div style={cardLabelStyle}>Met Target</div>
+            <div style={cardValueStyle}>{data.filter(d => d.status === 'Met').length}</div>
+          </div>
+
+          <div style={reportCardStyle}>
+            <div style={cardLabelStyle}>Below Target</div>
+            <div style={cardValueStyle}>{data.filter(d => d.status === 'Below').length}</div>
+          </div>
+
+          <div style={reportCardStyle}>
+            <div style={cardLabelStyle}>Overall Avg</div>
+            <div style={cardValueStyle}>
+              {data.length > 0 ? Math.round(data.reduce((sum, d) => sum + d.average, 0) / data.length) : 0}%
+            </div>
+          </div>
+        </div>
+
+        <div style={reportFooterStyle}>
+          <div>Generated on {new Date().toLocaleString()}</div>
+          <div>CAPWELL INDUSTRIES LIMITED</div>
+        </div>
+      </div>
+    );
+  };
+
+  const OverallRadarReport = () => {
+    const data = getOverallRadarData();
+
+    return (
+      <div id="overall-radar-report" style={reportPreviewStyle}>
+        <div style={reportHeaderStyle}>
+          <div style={reportTitleStyle}>Overall 6S Performance</div>
+          <div style={reportSubtitleStyle}>All Locations - All Audits</div>
+          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
+        </div>
+
+        <EnhancedRadarChart 
+          data={data}
+          title="6S Category Performance"
+        />
+
+        <div style={reportFooterStyle}>
+          <div>Generated on {new Date().toLocaleString()}</div>
+          <div>CAPWELL INDUSTRIES LIMITED</div>
+        </div>
+      </div>
+    );
+  };
+
+  const LocationRadarReport = () => {
+    const data = selectedLocation ? getLocationRadarData(selectedLocation) : [];
+
+    return (
+      <div id="location-radar-report" style={reportPreviewStyle}>
+        <div style={reportHeaderStyle}>
+          <div style={reportTitleStyle}>Location 6S Performance</div>
+          <div style={reportSubtitleStyle}>{selectedLocation || 'Select a location'}</div>
+          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
+        </div>
+
+        {selectedLocation && data.length > 0 ? (
+          <EnhancedRadarChart 
+            data={data}
+            title={`6S Performance - ${selectedLocation}`}
+          />
+        ) : (
+          <div style={{ padding: '20px', color: '#999', textAlign: 'center', fontSize: '13px' }}>
+            Select a location to view performance
+          </div>
+        )}
+
+        <div style={reportFooterStyle}>
+          <div>Generated on {new Date().toLocaleString()}</div>
+          <div>CAPWELL INDUSTRIES LIMITED</div>
+        </div>
+      </div>
+    );
+  };
+
+  // Export to PDF
   const exportToPDF = async (elementId, filename) => {
     try {
       const element = document.getElementById(elementId);
@@ -149,737 +601,272 @@ const Reports = () => {
       }
 
       pdf.save(filename);
-      console.log('PDF saved:', filename);
     } catch (err) {
       console.error('Error generating PDF:', err);
       alert('Error generating PDF: ' + err.message);
     }
   };
 
-  // ==================== REPORT 1: AUDIT REPORT ====================
-  const AuditReportPreview = () => {
-    const audit = audits.find(a => a.id === selectedAuditId);
-    if (!audit) return <div style={{ padding: '20px', color: '#999' }}>Select an audit to preview</div>;
+  // ==================== STYLES ====================
 
-    const sixSData = SIX_S_CATEGORIES.map(category => ({
-      name: category.code,
-      value: audit.sixSScores[category.code] || 0
-    }));
-
-    return (
-      <div id="audit-report-preview" style={reportPreviewStyle}>
-        {/* Header */}
-        <div style={reportHeaderStyle}>
-          <div style={reportTitleStyle}>AUDIT REPORT</div>
-          <div style={reportSubtitleStyle}>CAPWELL INDUSTRIES LIMITED</div>
-          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
-        </div>
-
-        {/* Audit Info Cards */}
-        <div style={reportCardsGridStyle}>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Location</div>
-            <div style={cardValueStyle}>{audit.location}</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Audit Type</div>
-            <div style={cardValueStyle}>{auditTypeLabels[audit.auditType]}</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Auditor</div>
-            <div style={cardValueStyle}>{audit.auditor}</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Date</div>
-            <div style={cardValueStyle}>{audit.date}</div>
-          </div>
-        </div>
-
-        {/* Score Summary */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Score Summary</div>
-          <div style={scoreSummaryGridStyle}>
-            <div style={scoreSummaryCardStyle}>
-              <div style={scoreLargeStyle}>{audit.percentage}%</div>
-              <div style={scoreSmallStyle}>Overall Score</div>
-            </div>
-            <div style={scoreSummaryCardStyle}>
-              <div style={scoreLargeStyle}>{audit.score}/{audit.maxScore}</div>
-              <div style={scoreSmallStyle}>Total Points</div>
-            </div>
-            <div style={{
-              ...scoreSummaryCardStyle,
-              background: audit.percentage >= 85 ? '#D1FAE5' : audit.percentage >= 70 ? '#DBEAFE' : audit.percentage >= 50 ? '#FEF3C7' : '#FEE2E2'
-            }}>
-              <div style={{
-                ...scoreLargeStyle,
-                color: audit.percentage >= 85 ? '#065F46' : audit.percentage >= 70 ? '#1E40AF' : audit.percentage >= 50 ? '#92400E' : '#991B1B'
-              }}>
-                {audit.status}
-              </div>
-              <div style={scoreSmallStyle}>Status</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 6S Radar Chart */}
-        {sixSData.length > 0 && (
-          <div style={reportSectionStyle}>
-            <div style={reportSectionTitleStyle}>6S Category Performance</div>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={sixSData}>
-                <PolarGrid stroke="#e5e7eb" />
-                <PolarAngleAxis dataKey="name" stroke="#666" />
-                <PolarRadiusAxis angle={90} domain={[0, 100]} stroke="#999" />
-                <Radar name="Score %" dataKey="value" stroke="#1E40AF" fill="#1E40AF" fillOpacity={0.6} />
-                <Tooltip formatter={(value) => `${value}%`} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* 6S Scores Table */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>6S Scores Breakdown</div>
-          <div style={tableStyle}>
-            {SIX_S_CATEGORIES.map((category, idx) => (
-              <div key={category.code} style={tableRowStyle}>
-                <div style={tableColStyle}>{category.code}</div>
-                <div style={tableColStyle}>{category.name}</div>
-                <div style={{
-                  ...tableColStyle,
-                  fontWeight: '700',
-                  color: audit.sixSScores[category.code] >= 70 ? '#10B981' : '#EF4444'
-                }}>
-                  {audit.sixSScores[category.code] || 0}%
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={reportFooterStyle}>
-          <div>Generated on {new Date().toLocaleString()}</div>
-          <div>CAPWELL INDUSTRIES LIMITED - Confidential</div>
-        </div>
-      </div>
-    );
-  };
-
-  // ==================== REPORT 2: LOCATION PERFORMANCE ====================
-  const LocationReportPreview = () => {
-    const locationAudits = audits.filter(a => a.location === selectedLocation);
-    if (locationAudits.length === 0) return <div style={{ padding: '20px', color: '#999' }}>Select a location to preview</div>;
-
-    const avgScore = Math.round(
-      locationAudits.reduce((sum, a) => sum + a.percentage, 0) / locationAudits.length
-    );
-
-    const trendData = [...locationAudits].sort((a, b) => new Date(a.date) - new Date(b.date)).map(a => ({
-      date: a.date,
-      score: a.percentage
-    }));
-
-    const sixSAverages = SIX_S_CATEGORIES.map(category => {
-      const scores = locationAudits
-        .map(a => a.sixSScores[category.code] || 0)
-        .filter(s => s > 0);
-      return {
-        name: category.code,
-        value: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
-      };
-    });
-
-    const statusCounts = {
-      excellent: locationAudits.filter(a => a.percentage >= 85).length,
-      good: locationAudits.filter(a => a.percentage >= 70 && a.percentage < 85).length,
-      needsImprovement: locationAudits.filter(a => a.percentage >= 50 && a.percentage < 70).length,
-      critical: locationAudits.filter(a => a.percentage < 50).length
-    };
-
-    const statusData = [
-      { name: 'Excellent', value: statusCounts.excellent, fill: '#10B981' },
-      { name: 'Good', value: statusCounts.good, fill: '#3B82F6' },
-      { name: 'Needs Improvement', value: statusCounts.needsImprovement, fill: '#F59E0B' },
-      { name: 'Critical', value: statusCounts.critical, fill: '#EF4444' }
-    ].filter(item => item.value > 0);
-
-    return (
-      <div id="location-report-preview" style={reportPreviewStyle}>
-        {/* Header */}
-        <div style={reportHeaderStyle}>
-          <div style={reportTitleStyle}>LOCATION PERFORMANCE REPORT</div>
-          <div style={reportSubtitleStyle}>{selectedLocation}</div>
-          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
-        </div>
-
-        {/* Summary Cards */}
-        <div style={reportCardsGridStyle}>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Average Score</div>
-            <div style={cardValueStyle}>{avgScore}%</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Total Audits</div>
-            <div style={cardValueStyle}>{locationAudits.length}</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Excellent</div>
-            <div style={{ ...cardValueStyle, color: '#10B981' }}>{statusCounts.excellent}</div>
-          </div>
-          <div style={reportCardStyle}>
-            <div style={cardLabelStyle}>Good</div>
-            <div style={{ ...cardValueStyle, color: '#3B82F6' }}>{statusCounts.good}</div>
-          </div>
-        </div>
-
-        {/* Trend Chart */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Performance Trend</div>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={trendData}>
-              <CartesianGrid stroke="#e5e7eb" />
-              <XAxis dataKey="date" stroke="#666" />
-              <YAxis stroke="#666" domain={[0, 100]} />
-              <Tooltip />
-              <Line type="monotone" dataKey="score" stroke="#1E40AF" strokeWidth={2} dot={{ fill: '#1E40AF' }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* 6S Performance Radar */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>6S Category Performance</div>
-          <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={sixSAverages}>
-              <PolarGrid stroke="#e5e7eb" />
-              <PolarAngleAxis dataKey="name" stroke="#666" />
-              <PolarRadiusAxis angle={90} domain={[0, 100]} stroke="#999" />
-              <Radar name="Average %" dataKey="value" stroke="#1E40AF" fill="#1E40AF" fillOpacity={0.6} />
-              <Tooltip formatter={(value) => `${value}%`} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Status Distribution */}
-        {statusData.length > 0 && (
-          <div style={reportSectionStyle}>
-            <div style={reportSectionTitleStyle}>Audit Status Distribution</div>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div style={reportFooterStyle}>
-          <div>Generated on {new Date().toLocaleString()}</div>
-          <div>CAPWELL INDUSTRIES LIMITED - Confidential</div>
-        </div>
-      </div>
-    );
-  };
-
-  // ==================== REPORT 3: 6S CATEGORY ANALYSIS ====================
-  const CategoryReportPreview = () => {
-    if (audits.length === 0) return <div style={{ padding: '20px', color: '#999' }}>No audits available</div>;
-
-    const categoryData = SIX_S_CATEGORIES.map(category => {
-      const scores = audits
-        .map(a => a.sixSScores[category.code] || 0)
-        .filter(s => s > 0);
-      return {
-        name: category.code,
-        average: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
-        min: scores.length > 0 ? Math.min(...scores) : 0,
-        max: scores.length > 0 ? Math.max(...scores) : 0
-      };
-    });
-
-    const sortedByAverage = [...categoryData].sort((a, b) => b.average - a.average);
-
-    return (
-      <div id="category-report-preview" style={reportPreviewStyle}>
-        {/* Header */}
-        <div style={reportHeaderStyle}>
-          <div style={reportTitleStyle}>6S CATEGORY ANALYSIS REPORT</div>
-          <div style={reportSubtitleStyle}>Performance Across All Categories</div>
-          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
-        </div>
-
-        {/* Category Performance Chart */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Average Performance by Category</div>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={categoryData}>
-              <CartesianGrid stroke="#e5e7eb" />
-              <XAxis dataKey="name" stroke="#666" />
-              <YAxis stroke="#666" domain={[0, 100]} />
-              <Tooltip />
-              <Bar dataKey="average" fill="#1E40AF" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Rankings */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Category Rankings</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            {/* Best Performing */}
-            <div>
-              <div style={{ fontSize: '16px', fontWeight: '700', color: '#10B981', marginBottom: '15px' }}>
-                🏆 Best Performing
-              </div>
-              {sortedByAverage.slice(0, 3).map((cat, idx) => (
-                <div key={cat.name} style={rankingItemStyle}>
-                  <div style={rankingNumberStyle}>{idx + 1}</div>
-                  <div>
-                    <div style={rankingNameStyle}>{cat.name}</div>
-                    <div style={rankingScoreStyle}>{cat.average}%</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Needs Improvement */}
-            <div>
-              <div style={{ fontSize: '16px', fontWeight: '700', color: '#EF4444', marginBottom: '15px' }}>
-                ⚠️ Needs Improvement
-              </div>
-              {sortedByAverage.slice(-3).reverse().map((cat, idx) => (
-                <div key={cat.name} style={rankingItemStyle}>
-                  <div style={rankingNumberStyle}>{idx + 1}</div>
-                  <div>
-                    <div style={rankingNameStyle}>{cat.name}</div>
-                    <div style={rankingScoreStyle}>{cat.average}%</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Table */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Detailed Statistics</div>
-          <div style={tableStyle}>
-            <div style={{ ...tableRowStyle, background: '#1E40AF', color: 'white' }}>
-              <div style={tableColStyle}>Category</div>
-              <div style={tableColStyle}>Average</div>
-              <div style={tableColStyle}>Min</div>
-              <div style={tableColStyle}>Max</div>
-            </div>
-            {categoryData.map(cat => (
-              <div key={cat.name} style={tableRowStyle}>
-                <div style={tableColStyle}>{cat.name}</div>
-                <div style={tableColStyle}>{cat.average}%</div>
-                <div style={tableColStyle}>{cat.min}%</div>
-                <div style={tableColStyle}>{cat.max}%</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={reportFooterStyle}>
-          <div>Generated on {new Date().toLocaleString()}</div>
-          <div>CAPWELL INDUSTRIES LIMITED - Confidential</div>
-        </div>
-      </div>
-    );
-  };
-
-  // ==================== REPORT 4: TREND ANALYSIS ====================
-  const TrendReportPreview = () => {
-    if (audits.length === 0) return <div style={{ padding: '20px', color: '#999' }}>No audits available</div>;
-
-    const sortedAudits = [...audits].sort((a, b) => new Date(a.date) - new Date(b.date));
-    const trendData = sortedAudits.map(a => ({
-      date: a.date,
-      score: a.percentage,
-      location: a.location
-    }));
-
-    const locationTrends = locations.map(location => {
-      const locAudits = sortedAudits.filter(a => a.location === location);
-      const firstAvg = locAudits[0]?.percentage || 0;
-      const lastAvg = locAudits[locAudits.length - 1]?.percentage || 0;
-      const trend = lastAvg - firstAvg;
-      return {
-        location,
-        first: firstAvg,
-        last: lastAvg,
-        trend,
-        direction: trend > 0 ? '↑' : trend < 0 ? '↓' : '→'
-      };
-    });
-
-    return (
-      <div id="trend-report-preview" style={reportPreviewStyle}>
-        {/* Header */}
-        <div style={reportHeaderStyle}>
-          <div style={reportTitleStyle}>TREND ANALYSIS REPORT</div>
-          <div style={reportSubtitleStyle}>Performance Over Time</div>
-          <div style={reportDateStyle}>{new Date().toLocaleDateString()}</div>
-        </div>
-
-        {/* Overall Trend */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Overall Performance Trend</div>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={trendData}>
-              <CartesianGrid stroke="#e5e7eb" />
-              <XAxis dataKey="date" stroke="#666" />
-              <YAxis stroke="#666" domain={[0, 100]} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="score" stroke="#1E40AF" strokeWidth={2} name="Score %" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Location Trends */}
-        <div style={reportSectionStyle}>
-          <div style={reportSectionTitleStyle}>Location Performance Trends</div>
-          <div style={tableStyle}>
-            <div style={{ ...tableRowStyle, background: '#1E40AF', color: 'white' }}>
-              <div style={tableColStyle}>Location</div>
-              <div style={tableColStyle}>First</div>
-              <div style={tableColStyle}>Latest</div>
-              <div style={tableColStyle}>Change</div>
-              <div style={tableColStyle}>Trend</div>
-            </div>
-            {locationTrends.map(loc => (
-              <div key={loc.location} style={tableRowStyle}>
-                <div style={tableColStyle}>{loc.location}</div>
-                <div style={tableColStyle}>{loc.first}%</div>
-                <div style={tableColStyle}>{loc.last}%</div>
-                <div style={{
-                  ...tableColStyle,
-                  color: loc.trend > 0 ? '#10B981' : loc.trend < 0 ? '#EF4444' : '#666',
-                  fontWeight: '700'
-                }}>
-                  {loc.trend > 0 ? '+' : ''}{loc.trend}%
-                </div>
-                <div style={tableColStyle}>{loc.direction}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={reportFooterStyle}>
-          <div>Generated on {new Date().toLocaleString()}</div>
-          <div>CAPWELL INDUSTRIES LIMITED - Confidential</div>
-        </div>
-      </div>
-    );
-  };
-
-  // Styles
   const containerStyle = {
-    padding: '30px',
-    background: '#f5f5f5',
+    padding: '24px',
+    background: '#F5F7FA',
     minHeight: '100vh'
   };
 
   const headerStyle = {
-    marginBottom: '30px'
+    marginBottom: '24px'
   };
 
   const titleStyle = {
-    fontSize: '32px',
+    fontSize: '20px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '10px'
+    color: '#2C3E50',
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  };
+
+  const subtitleStyle = {
+    color: '#999',
+    fontSize: '13px',
+    fontWeight: '500'
   };
 
   const tabsStyle = {
     display: 'flex',
-    gap: '10px',
-    marginBottom: '30px',
-    borderBottom: '2px solid #e5e7eb',
+    gap: '8px',
+    marginBottom: '24px',
+    borderBottom: '2px solid #E8EAED',
     flexWrap: 'wrap'
   };
 
   const tabStyle = (isActive) => ({
-    padding: '12px 24px',
+    padding: '10px 16px',
     border: 'none',
     background: 'transparent',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: isActive ? '#1E40AF' : '#666',
-    borderBottom: isActive ? '3px solid #1E40AF' : 'none',
-    transition: 'all 0.3s'
+    fontSize: '12px',
+    fontWeight: '700',
+    color: isActive ? '#2C3E50' : '#999',
+    borderBottom: isActive ? '2px solid #FFD54F' : 'none',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    marginBottom: '-2px'
   });
 
   const cardStyle = {
     background: 'white',
-    padding: '30px',
+    padding: '20px',
     borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    marginBottom: '30px'
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    marginBottom: '24px',
+    border: '1px solid #E8EAED'
   };
 
   const sectionTitleStyle = {
-    fontSize: '20px',
+    fontSize: '16px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '20px',
-    paddingBottom: '15px',
-    borderBottom: '2px solid #e5e7eb'
+    color: '#2C3E50',
+    marginBottom: '16px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const formGroupStyle = {
-    marginBottom: '20px'
+    marginBottom: '16px'
   };
 
   const labelStyle = {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: '8px',
-    display: 'block'
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: '6px',
+    display: 'block',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const selectStyle = {
     width: '100%',
-    padding: '10px 12px',
-    border: '1px solid #ddd',
+    padding: '8px 12px',
+    border: '1px solid #E8EAED',
     borderRadius: '6px',
-    fontSize: '14px',
-    fontFamily: 'inherit'
+    fontSize: '13px',
+    fontFamily: 'inherit',
+    color: '#2C3E50',
+    transition: 'all 0.3s ease'
   };
 
   const buttonGroupStyle = {
     display: 'flex',
-    gap: '10px',
-    marginTop: '20px',
+    gap: '8px',
+    marginTop: '16px',
     flexWrap: 'wrap'
   };
 
   const buttonStyle = {
-    padding: '12px 24px',
+    padding: '8px 16px',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    transition: 'all 0.3s'
+    fontSize: '12px',
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const primaryButtonStyle = {
     ...buttonStyle,
-    background: '#1E40AF',
+    background: '#2C3E50',
     color: 'white'
   };
 
-  const secondaryButtonStyle = {
-    ...buttonStyle,
-    background: '#6b7280',
-    color: 'white'
-  };
-
-  // Report Preview Styles
   const reportPreviewStyle = {
     background: 'white',
-    padding: '40px',
+    padding: '24px',
     borderRadius: '8px',
-    marginTop: '20px',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+    marginTop: '16px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    border: '1px solid #E8EAED'
   };
 
   const reportHeaderStyle = {
     textAlign: 'center',
-    marginBottom: '40px',
-    paddingBottom: '30px',
-    borderBottom: '3px solid #1E40AF'
+    marginBottom: '24px',
+    paddingBottom: '20px',
+    borderBottom: '1px solid #E8EAED'
   };
 
   const reportTitleStyle = {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '10px'
+    fontSize: '18px',
+    fontWeight: '800',
+    color: '#2C3E50',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const reportSubtitleStyle = {
-    fontSize: '18px',
-    color: '#666',
-    marginBottom: '10px'
+    fontSize: '13px',
+    color: '#999',
+    marginBottom: '8px',
+    fontWeight: '600'
   };
 
   const reportDateStyle = {
-    fontSize: '14px',
-    color: '#999'
+    fontSize: '11px',
+    color: '#999',
+    fontWeight: '500'
   };
 
   const reportCardsGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '20px',
-    marginBottom: '40px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '12px',
+    marginBottom: '24px'
   };
 
   const reportCardStyle = {
-    background: '#f9fafb',
-    padding: '20px',
-    borderRadius: '8px',
-    border: '1px solid #e5e7eb'
+    background: '#F5F7FA',
+    padding: '12px',
+    borderRadius: '6px',
+    border: '1px solid #E8EAED',
+    textAlign: 'center'
   };
 
   const cardLabelStyle = {
-    fontSize: '12px',
+    fontSize: '10px',
     color: '#999',
-    fontWeight: '600',
-    marginBottom: '8px'
+    fontWeight: '700',
+    marginBottom: '6px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const cardValueStyle = {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#1E40AF'
+    fontSize: '18px',
+    fontWeight: '800',
+    color: '#FFD54F'
   };
 
   const reportSectionStyle = {
-    marginBottom: '40px'
+    marginBottom: '24px'
   };
 
-    const reportSectionTitleStyle = {
-    fontSize: '18px',
+  const reportSectionTitleStyle = {
+    fontSize: '13px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '20px',
-    paddingBottom: '10px',
-    borderBottom: '2px solid #e5e7eb'
-  };
-
-  const scoreSummaryGridStyle = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '20px'
-  };
-
-  const scoreSummaryCardStyle = {
-    background: '#f0f9ff',
-    padding: '20px',
-    borderRadius: '8px',
-    textAlign: 'center',
-    border: '2px solid #bfdbfe'
-  };
-
-  const scoreLargeStyle = {
-    fontSize: '36px',
-    fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '8px'
-  };
-
-  const scoreSmallStyle = {
-    fontSize: '12px',
-    color: '#666',
-    fontWeight: '600'
+    color: '#2C3E50',
+    marginBottom: '12px',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #E8EAED',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const tableStyle = {
     width: '100%',
     borderCollapse: 'collapse',
-    marginTop: '15px'
+    marginTop: '12px'
   };
 
   const tableRowStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
-    gap: '15px',
-    padding: '15px',
-    borderBottom: '1px solid #e5e7eb',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
+    gap: '12px',
+    padding: '10px',
+    borderBottom: '1px solid #E8EAED',
     alignItems: 'center'
   };
 
   const tableColStyle = {
-    fontSize: '14px',
-    color: '#333'
-  };
-
-  const rankingItemStyle = {
-    display: 'flex',
-    gap: '15px',
-    padding: '12px',
-    background: '#f9fafb',
-    borderRadius: '6px',
-    marginBottom: '10px',
-    alignItems: 'center'
-  };
-
-  const rankingNumberStyle = {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1E40AF',
-    minWidth: '30px',
-    textAlign: 'center'
-  };
-
-  const rankingNameStyle = {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#333'
-  };
-
-  const rankingScoreStyle = {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: '#1E40AF'
+    fontSize: '12px',
+    color: '#2C3E50',
+    fontWeight: '500'
   };
 
   const reportFooterStyle = {
-    marginTop: '40px',
-    paddingTop: '20px',
-    borderTop: '2px solid #e5e7eb',
+    marginTop: '24px',
+    paddingTop: '16px',
+    borderTop: '1px solid #E8EAED',
     textAlign: 'center',
-    fontSize: '12px',
-    color: '#999'
+    fontSize: '11px',
+    color: '#999',
+    fontWeight: '600'
   };
 
   const loadingStyle = {
     textAlign: 'center',
-    padding: '40px',
-    fontSize: '18px',
-    color: '#666'
+    padding: '60px 40px',
+    fontSize: '16px',
+    color: '#999',
+    fontWeight: '600'
   };
 
   const errorStyle = {
-    background: '#FEE2E2',
-    color: '#991B1B',
-    padding: '15px',
-    borderRadius: '8px',
-    marginBottom: '20px'
+    background: 'rgba(231, 76, 60, 0.1)',
+    color: '#E74C3C',
+    padding: '12px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+    borderLeft: '3px solid #E74C3C',
+    fontWeight: '600',
+    fontSize: '13px'
   };
 
   const infoBoxStyle = {
-    background: '#DBEAFE',
-    color: '#1E40AF',
-    padding: '15px',
-    borderRadius: '8px',
+    background: 'rgba(255, 213, 79, 0.1)',
+    color: '#2C3E50',
+    padding: '12px',
+    borderRadius: '6px',
     marginBottom: '20px',
-    fontSize: '14px'
+    fontSize: '13px',
+    border: '1px solid #FFD54F',
+    fontWeight: '600'
   };
 
   if (loading) {
@@ -891,7 +878,7 @@ const Reports = () => {
       {/* HEADER */}
       <div style={headerStyle}>
         <h1 style={titleStyle}>Reports</h1>
-        <p style={{ color: '#666', fontSize: '16px' }}>Generate and export professional audit reports</p>
+        <p style={subtitleStyle}>Generate professional audit reports</p>
       </div>
 
       {/* ERROR MESSAGE */}
@@ -900,94 +887,113 @@ const Reports = () => {
       {/* INFO BOX */}
       {audits.length > 0 && (
         <div style={infoBoxStyle}>
-          ℹ️ Total Audits Available: {audits.length} | Locations: {locations.length}
+          Total Audits: {audits.length} | Locations: {locations.length} | Target: {TARGET_SCORE}%
         </div>
       )}
+
+      {/* DATE FILTER */}
+      <DateFilterComponent />
 
       {/* TABS */}
       <div style={tabsStyle}>
         <button
-          style={tabStyle(activeReport === 'audit')}
-          onClick={() => setActiveReport('audit')}
+          style={tabStyle(activeReport === 'monthVsMonth')}
+          onClick={() => setActiveReport('monthVsMonth')}
         >
-          📋 Audit Report
+          Month vs Month
         </button>
+
         <button
-          style={tabStyle(activeReport === 'location')}
-          onClick={() => setActiveReport('location')}
+          style={tabStyle(activeReport === 'averageVsTarget')}
+          onClick={() => setActiveReport('averageVsTarget')}
         >
-          📍 Location Performance
+          Average vs Target
         </button>
+
         <button
-          style={tabStyle(activeReport === 'category')}
-          onClick={() => setActiveReport('category')}
+          style={tabStyle(activeReport === 'overallRadar')}
+          onClick={() => setActiveReport('overallRadar')}
         >
-          📊 6S Category Analysis
+          Overall Radar
         </button>
+
         <button
-          style={tabStyle(activeReport === 'trend')}
-          onClick={() => setActiveReport('trend')}
+          style={tabStyle(activeReport === 'locationRadar')}
+          onClick={() => setActiveReport('locationRadar')}
         >
-          📈 Trend Analysis
+          Location Radar
         </button>
       </div>
 
-      {/* REPORT 1: AUDIT REPORT */}
-      {activeReport === 'audit' && (
+      {/* REPORT 1: MONTH VS MONTH */}
+      {activeReport === 'monthVsMonth' && (
         <div style={cardStyle}>
-          <h2 style={sectionTitleStyle}>📋 Audit Report</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Generate a detailed executive report for a specific audit with visual charts and metrics.
+          <h2 style={sectionTitleStyle}>Month vs Month Performance</h2>
+          <p style={{ color: '#999', marginBottom: '16px', fontSize: '13px' }}>
+            Compare monthly average scores against the {TARGET_SCORE}% target.
           </p>
 
-          <div style={formGroupStyle}>
-            <label style={labelStyle}>Select Audit</label>
-            <select
-              value={selectedAuditId}
-              onChange={(e) => setSelectedAuditId(e.target.value)}
-              style={selectStyle}
+          <div style={buttonGroupStyle}>
+            <button
+              onClick={() => exportToPDF('month-vs-month-report', `Month_vs_Month_Report_${new Date().toISOString().split('T')[0]}.pdf`)}
+              style={primaryButtonStyle}
             >
-              <option value="">-- Choose an audit --</option>
-              {audits.map(audit => (
-                <option key={audit.id} value={audit.id}>
-                  {audit.date} - {audit.location} ({auditTypeLabels[audit.auditType]}) - {audit.percentage}%
-                </option>
-              ))}
-            </select>
+              Download PDF
+            </button>
           </div>
 
-          {selectedAuditId && (
-            <div style={buttonGroupStyle}>
-              <button
-                onClick={() => exportToPDF('audit-report-preview', `Audit_Report_${audits.find(a => a.id === selectedAuditId)?.location}_${audits.find(a => a.id === selectedAuditId)?.date}.pdf`)}
-                style={primaryButtonStyle}
-                onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-                onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
-              >
-                📥 Download as PDF
-              </button>
-              <button
-                onClick={() => exportAuditReportExcel()}
-                style={secondaryButtonStyle}
-                onMouseEnter={(e) => e.target.style.background = '#4b5563'}
-                onMouseLeave={(e) => e.target.style.background = '#6b7280'}
-              >
-                📊 Export as Excel
-              </button>
-            </div>
-          )}
-
-          {/* Preview */}
-          <AuditReportPreview />
+          <MonthVsMonthReport />
         </div>
       )}
 
-      {/* REPORT 2: LOCATION PERFORMANCE */}
-      {activeReport === 'location' && (
+      {/* REPORT 2: AVERAGE VS TARGET */}
+      {activeReport === 'averageVsTarget' && (
         <div style={cardStyle}>
-          <h2 style={sectionTitleStyle}>📍 Location Performance Report</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Generate a comprehensive performance report with trends, charts, and 6S breakdown.
+          <h2 style={sectionTitleStyle}>Average vs Target</h2>
+          <p style={{ color: '#999', marginBottom: '16px', fontSize: '13px' }}>
+            View all months showing average score against the {TARGET_SCORE}% target.
+          </p>
+
+          <div style={buttonGroupStyle}>
+            <button
+              onClick={() => exportToPDF('average-vs-target-report', `Average_vs_Target_Report_${new Date().toISOString().split('T')[0]}.pdf`)}
+              style={primaryButtonStyle}
+            >
+              Download PDF
+            </button>
+          </div>
+
+          <AverageVsTargetReport />
+        </div>
+      )}
+
+      {/* REPORT 3: OVERALL RADAR */}
+      {activeReport === 'overallRadar' && (
+        <div style={cardStyle}>
+          <h2 style={sectionTitleStyle}>Overall 6S Performance</h2>
+          <p style={{ color: '#999', marginBottom: '16px', fontSize: '13px' }}>
+            Comprehensive 6S radar chart across all locations and audits.
+          </p>
+
+          <div style={buttonGroupStyle}>
+            <button
+              onClick={() => exportToPDF('overall-radar-report', `Overall_Radar_Report_${new Date().toISOString().split('T')[0]}.pdf`)}
+              style={primaryButtonStyle}
+            >
+              Download PDF
+            </button>
+          </div>
+
+          <OverallRadarReport />
+        </div>
+      )}
+
+      {/* REPORT 4: LOCATION RADAR */}
+      {activeReport === 'locationRadar' && (
+        <div style={cardStyle}>
+          <h2 style={sectionTitleStyle}>Location 6S Performance</h2>
+          <p style={{ color: '#999', marginBottom: '16px', fontSize: '13px' }}>
+            View 6S performance radar for a specific location.
           </p>
 
           <div style={formGroupStyle}>
@@ -997,7 +1003,7 @@ const Reports = () => {
               onChange={(e) => setSelectedLocation(e.target.value)}
               style={selectStyle}
             >
-              <option value="">-- Choose a location --</option>
+              <option value="">-- Choose location --</option>
               {locations.map(location => (
                 <option key={location} value={location}>
                   {location}
@@ -1009,264 +1015,19 @@ const Reports = () => {
           {selectedLocation && (
             <div style={buttonGroupStyle}>
               <button
-                onClick={() => exportToPDF('location-report-preview', `Location_Report_${selectedLocation}_${new Date().toISOString().split('T')[0]}.pdf`)}
+                onClick={() => exportToPDF('location-radar-report', `Location_Radar_${selectedLocation}_${new Date().toISOString().split('T')[0]}.pdf`)}
                 style={primaryButtonStyle}
-                onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-                onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
               >
-                📥 Download as PDF
-              </button>
-              <button
-                onClick={() => exportLocationReportExcel()}
-                style={secondaryButtonStyle}
-                onMouseEnter={(e) => e.target.style.background = '#4b5563'}
-                onMouseLeave={(e) => e.target.style.background = '#6b7280'}
-              >
-                📊 Export as Excel
+                Download PDF
               </button>
             </div>
           )}
 
-          {/* Preview */}
-          <LocationReportPreview />
-        </div>
-      )}
-
-      {/* REPORT 3: 6S CATEGORY ANALYSIS */}
-      {activeReport === 'category' && (
-        <div style={cardStyle}>
-          <h2 style={sectionTitleStyle}>📊 6S Category Analysis Report</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Analyze performance across all 6S categories with rankings and detailed statistics.
-          </p>
-
-          <div style={buttonGroupStyle}>
-            <button
-              onClick={() => exportToPDF('category-report-preview', `6S_Category_Analysis_${new Date().toISOString().split('T')[0]}.pdf`)}
-              style={primaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-              onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
-            >
-              📥 Download as PDF
-            </button>
-            <button
-              onClick={() => exportCategoryAnalysisExcel()}
-              style={secondaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#4b5563'}
-              onMouseLeave={(e) => e.target.style.background = '#6b7280'}
-            >
-              📊 Export as Excel
-            </button>
-          </div>
-
-          {/* Preview */}
-          <CategoryReportPreview />
-        </div>
-      )}
-
-      {/* REPORT 4: TREND ANALYSIS */}
-      {activeReport === 'trend' && (
-        <div style={cardStyle}>
-          <h2 style={sectionTitleStyle}>📈 Trend Analysis Report</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Analyze performance trends over time with location-specific insights.
-          </p>
-
-          <div style={buttonGroupStyle}>
-            <button
-              onClick={() => exportToPDF('trend-report-preview', `Trend_Analysis_${new Date().toISOString().split('T')[0]}.pdf`)}
-              style={primaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-              onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
-            >
-              📥 Download as PDF
-            </button>
-            <button
-              onClick={() => exportTrendAnalysisExcel()}
-              style={secondaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#4b5563'}
-              onMouseLeave={(e) => e.target.style.background = '#6b7280'}
-            >
-              📊 Export as Excel
-            </button>
-          </div>
-
-          {/* Preview */}
-          <TrendReportPreview />
+          <LocationRadarReport />
         </div>
       )}
     </div>
   );
-
-  // Excel Export Functions
-  function exportAuditReportExcel() {
-    const audit = audits.find(a => a.id === selectedAuditId);
-    if (!audit) return;
-
-    const workbook = XLSX.utils.book_new();
-
-    const auditInfoData = [
-      { Field: 'Date', Value: audit.date },
-      { Field: 'Audit Type', Value: auditTypeLabels[audit.auditType] },
-      { Field: 'Location', Value: audit.location },
-      { Field: 'Auditor', Value: audit.auditor },
-      { Field: 'Status', Value: audit.status },
-      { Field: 'Total Score', Value: `${audit.score}/${audit.maxScore}` },
-      { Field: 'Percentage', Value: `${audit.percentage}%` }
-    ];
-
-    const sixSData = SIX_S_CATEGORIES.map(category => ({
-      'Category Code': category.code,
-      'Category Name': category.name,
-      'Score %': audit.sixSScores[category.code] || 0
-    }));
-
-    const auditSheet = XLSX.utils.json_to_sheet(auditInfoData);
-    const sixSSheet = XLSX.utils.json_to_sheet(sixSData);
-
-    XLSX.utils.book_append_sheet(workbook, auditSheet, 'Audit Info');
-    XLSX.utils.book_append_sheet(workbook, sixSSheet, '6S Scores');
-
-    XLSX.writeFile(workbook, `Audit_Report_${audit.location}_${audit.date}.xlsx`);
-  }
-
-  function exportLocationReportExcel() {
-    const locationAudits = audits.filter(a => a.location === selectedLocation);
-    if (locationAudits.length === 0) return;
-
-    const workbook = XLSX.utils.book_new();
-
-    const avgScore = Math.round(
-      locationAudits.reduce((sum, a) => sum + a.percentage, 0) / locationAudits.length
-    );
-
-    const summaryData = [
-      { Metric: 'Location', Value: selectedLocation },
-      { Metric: 'Total Audits', Value: locationAudits.length },
-      { Metric: 'Average Score', Value: `${avgScore}%` },
-      { Metric: 'Excellent (≥85%)', Value: locationAudits.filter(a => a.percentage >= 85).length },
-      { Metric: 'Good (70-84%)', Value: locationAudits.filter(a => a.percentage >= 70 && a.percentage < 85).length },
-      { Metric: 'Needs Improvement (50-69%)', Value: locationAudits.filter(a => a.percentage >= 50 && a.percentage < 70).length },
-      { Metric: 'Critical (<50%)', Value: locationAudits.filter(a => a.percentage < 50).length }
-    ];
-
-    const sixSAverages = {};
-    SIX_S_CATEGORIES.forEach(category => {
-      const scores = locationAudits
-        .map(a => a.sixSScores[category.code] || 0)
-        .filter(s => s > 0);
-      sixSAverages[category.code] = scores.length > 0 
-        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
-        : 0;
-    });
-
-    const sixSData = SIX_S_CATEGORIES.map(category => ({
-      'Category Code': category.code,
-      'Category Name': category.name,
-      'Average Score %': sixSAverages[category.code]
-    }));
-
-    const auditListData = locationAudits.map(audit => ({
-      Date: audit.date,
-      'Audit Type': auditTypeLabels[audit.auditType],
-      Score: `${audit.percentage}%`,
-      Status: audit.status,
-      'Total Points': `${audit.score}/${audit.maxScore}`
-    }));
-
-    const summarySheet = XLSX.utils.json_to_sheet(summaryData);
-    const sixSSheet = XLSX.utils.json_to_sheet(sixSData);
-    const auditSheet = XLSX.utils.json_to_sheet(auditListData);
-
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
-    XLSX.utils.book_append_sheet(workbook, sixSSheet, '6S Performance');
-    XLSX.utils.book_append_sheet(workbook, auditSheet, 'Audits');
-
-    XLSX.writeFile(workbook, `Location_Report_${selectedLocation}_${new Date().toISOString().split('T')[0]}.xlsx`);
-  }
-
-  function exportCategoryAnalysisExcel() {
-    const workbook = XLSX.utils.book_new();
-
-    const categoryData = SIX_S_CATEGORIES.map(category => {
-      const scores = audits
-        .map(a => a.sixSScores[category.code] || 0)
-        .filter(s => s > 0);
-      
-      return {
-        'Category Code': category.code,
-        'Category Name': category.name,
-        'Average Score %': scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
-        'Min Score %': scores.length > 0 ? Math.min(...scores) : 0,
-        'Max Score %': scores.length > 0 ? Math.max(...scores) : 0,
-        'Audit Count': scores.length
-      };
-    });
-
-    const locationCategoryData = [];
-    locations.forEach(location => {
-      const locationAudits = audits.filter(a => a.location === location);
-      SIX_S_CATEGORIES.forEach(category => {
-        const scores = locationAudits
-          .map(a => a.sixSScores[category.code] || 0)
-          .filter(s => s > 0);
-        
-        locationCategoryData.push({
-          Location: location,
-          'Category Code': category.code,
-          'Category Name': category.name,
-          'Average Score %': scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0
-        });
-      });
-    });
-
-    const categorySheet = XLSX.utils.json_to_sheet(categoryData);
-    const locationSheet = XLSX.utils.json_to_sheet(locationCategoryData);
-
-    XLSX.utils.book_append_sheet(workbook, categorySheet, 'Overall');
-    XLSX.utils.book_append_sheet(workbook, locationSheet, 'By Location');
-
-    XLSX.writeFile(workbook, `6S_Category_Analysis_${new Date().toISOString().split('T')[0]}.xlsx`);
-  }
-
-  function exportTrendAnalysisExcel() {
-    const workbook = XLSX.utils.book_new();
-
-    const sortedAudits = [...audits].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    const trendData = sortedAudits.map(audit => ({
-      Date: audit.date,
-      Location: audit.location,
-      'Audit Type': auditTypeLabels[audit.auditType],
-      'Score %': audit.percentage,
-      Status: audit.status
-    }));
-
-    const locationSummary = locations.map(location => {
-      const locationAudits = sortedAudits.filter(a => a.location === location);
-      const firstAvg = locationAudits[0]?.percentage || 0;
-      const lastAvg = locationAudits[locationAudits.length - 1]?.percentage || 0;
-      const trend = lastAvg - firstAvg;
-
-      return {
-        Location: location,
-        'First Audit %': firstAvg,
-        'Latest Audit %': lastAvg,
-        'Change %': trend,
-        'Trend': trend > 0 ? 'Improving' : trend < 0 ? 'Declining' : 'Stable',
-        'Audit Count': locationAudits.length
-      };
-    });
-
-    const trendSheet = XLSX.utils.json_to_sheet(trendData);
-    const summarySheet = XLSX.utils.json_to_sheet(locationSummary);
-
-    XLSX.utils.book_append_sheet(workbook, trendSheet, 'Trend Data');
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Location Summary');
-
-    XLSX.writeFile(workbook, `Trend_Analysis_${new Date().toISOString().split('T')[0]}.xlsx`);
-  }
 };
 
 export default Reports;
-

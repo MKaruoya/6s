@@ -1,122 +1,121 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Navbar = ({ user }) => {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      navigate('/login');
+    }
+  };
+
   const navbarStyle = {
-    background: '#1E40AF',
-    color: 'white',
-    padding: '16px 30px',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-    borderBottom: '3px solid #10B981'
+    background: '#FFFFFF',
+    color: '#2C3E50',
+    padding: '16px 40px',
+    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+    borderBottom: '2px solid #FFD54F',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100
   };
 
   const containerStyle = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    maxWidth: '1600px',
+    maxWidth: '1800px',
     margin: '0 auto'
   };
 
   const brandStyle = {
     display: 'flex',
     alignItems: 'center',
-    gap: '20px',
-    minWidth: '300px'
+    gap: '12px',
+    minWidth: 'fit-content'
   };
 
   const logoStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    fontSize: '18px',
-    fontWeight: '700',
-    letterSpacing: '0.5px'
-  };
-
-  const companyNameStyle = {
-    fontSize: '11px',
-    color: '#dbeafe',
-    fontWeight: '600',
-    letterSpacing: '1px',
-    textTransform: 'uppercase'
-  };
-
-  const centerStyle = {
-    flex: 1,
-    textAlign: 'center',
-    paddingX: '20px'
-  };
-
-  const titleStyle = {
-    margin: 0,
-    fontSize: '22px',
-    fontWeight: '700',
-    letterSpacing: '0.3px'
+    fontSize: '20px',
+    fontWeight: '800',
+    color: '#2C3E50',
+    textTransform: 'uppercase',
+    letterSpacing: '1px'
   };
 
   const rightStyle = {
     display: 'flex',
     alignItems: 'center',
-    gap: '25px',
-    minWidth: '250px',
-    justifyContent: 'flex-end'
+    gap: '24px',
+    minWidth: 'fit-content'
   };
 
   const userMenuStyle = {
     display: 'flex',
     alignItems: 'center',
-    gap: '16px'
+    gap: '12px',
+    paddingLeft: '24px',
+    borderLeft: '1px solid #E8EAED'
   };
 
   const userNameStyle = {
-    fontSize: '14px',
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#2C3E50',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  };
+
+  const userRoleStyle = {
+    fontSize: '11px',
+    color: '#999',
     fontWeight: '600',
-    color: '#dbeafe'
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const logoutBtnStyle = {
-    backgroundColor: '#DC2626',
+    backgroundColor: '#E74C3C',
     color: 'white',
     border: 'none',
-    padding: '10px 18px',
+    padding: '8px 16px',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: '600',
+    fontSize: '11px',
+    fontWeight: '700',
     transition: 'all 0.3s ease',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.2)'
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   return (
     <nav style={navbarStyle}>
       <div style={containerStyle}>
+        {/* Brand */}
         <div style={brandStyle}>
-          <div style={logoStyle}>
-            <span style={{ fontSize: '22px' }}>■</span>
-            <span></span>
-          </div>
-          <span style={companyNameStyle}>Capwell Industries Limited</span>
+          <div style={logoStyle}>6S</div>
         </div>
 
-        <div style={centerStyle}>
-          <h1 style={titleStyle}>
-            6S Digital Audit Management System
-          </h1>
-        </div>
-
+        {/* User Menu */}
         <div style={rightStyle}>
           <div style={userMenuStyle}>
-            <span style={userNameStyle}>
-              {user?.name || 'Auditor'}
-            </span>
+            <div>
+              <div style={userNameStyle}>{user?.name || 'User'}</div>
+              <div style={userRoleStyle}>{user?.role || 'Auditor'}</div>
+            </div>
+
             <button 
+              onClick={handleLogout}
               style={logoutBtnStyle}
               onMouseEnter={(e) => {
-                e.target.style.backgroundColor = '#B91C1C';
+                e.target.style.backgroundColor = '#C0392B';
                 e.target.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#DC2626';
+                e.target.style.backgroundColor = '#E74C3C';
                 e.target.style.transform = 'translateY(0)';
               }}
             >

@@ -28,8 +28,8 @@ const AuditForm = () => {
   return (
     <div className="audit-type-selector">
       <div className="selector-header">
-        <h1>Select Audit Type</h1>
-        <p>Choose the type of 6S audit to conduct</p>
+        <h1>New Audit</h1>
+        <p>Select audit type to begin</p>
       </div>
 
       <div className="audit-types-grid">
@@ -38,9 +38,9 @@ const AuditForm = () => {
           onClick={() => setSelectedAuditType('warehouse')}
         >
           <div className="card-icon">📦</div>
-          <h3>Warehouse 6S Audit</h3>
+          <h3>Warehouse</h3>
           <p>CIL/OPEX/6S/REC/004</p>
-          <span className="card-badge">100 points</span>
+          <span className="card-badge">100 pts</span>
         </button>
 
         <button
@@ -48,9 +48,9 @@ const AuditForm = () => {
           onClick={() => setSelectedAuditType('shopfloor')}
         >
           <div className="card-icon">🏭</div>
-          <h3>Plant/Shopfloor 6S Audit</h3>
+          <h3>Shopfloor</h3>
           <p>CIL/OPEX/6S/REC/002</p>
-          <span className="card-badge">120 points</span>
+          <span className="card-badge">120 pts</span>
         </button>
 
         <button
@@ -58,9 +58,9 @@ const AuditForm = () => {
           onClick={() => setSelectedAuditType('laboratory')}
         >
           <div className="card-icon">🧪</div>
-          <h3>Laboratory 6S Audit</h3>
+          <h3>Laboratory</h3>
           <p>CIL/OPEX/6S/REC/003</p>
-          <span className="card-badge">100 points</span>
+          <span className="card-badge">100 pts</span>
         </button>
 
         <button
@@ -68,9 +68,9 @@ const AuditForm = () => {
           onClick={() => setSelectedAuditType('internal')}
         >
           <div className="card-icon">📊</div>
-          <h3>6S Internal Audit</h3>
+          <h3>Internal</h3>
           <p>CIL/OPEX/KAIZEN/REC/001</p>
-          <span className="card-badge">Weekly Tracking</span>
+          <span className="card-badge">Weekly</span>
         </button>
       </div>
     </div>

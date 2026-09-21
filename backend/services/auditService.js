@@ -1,50 +1,58 @@
 /**
  * CAPWELL 6S AUDIT MANAGEMENT SYSTEM
- * Audit Service - Database Operations
+ * Audit Service - PostgreSQL Operations
  */
 
-const supabase = require('../config/supabase');
+const pool = require('../config/database');
 
 // ============================================
 // 1. CREATE AUDIT
 // ============================================
 async function createAudit(auditData) {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .insert([{
-        org_id: auditData.orgId,
-        audit_type_id: auditData.auditTypeId,
-        location_id: auditData.locationId,
-        team_id: auditData.teamId || null,
-        audit_date: auditData.auditDate,
-        auditor_id: auditData.auditorId,
-        team_name: auditData.teamName,
-        status: 'draft',
-        notes: auditData.notes || null
-      }])
-      .select();
+    const query = `
+      INSERT INTO audits (org_id, audit_type_id, location_id, team_id, audit_date, auditor_id, team_name, status, notes, total_score, percentage_score, submitted_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *;
+    `;
+    
+    const values = [
+      auditData.org_id,           // Changed from orgId
+      auditData.audit_type_id,    // Changed from auditTypeId
+      auditData.location_id,      // Changed from locationId
+      auditData.team_id || null,  // Changed from teamId
+      auditData.audit_date,       // Changed from auditDate
+      auditData.auditor_id,       // Changed from auditorId
+      auditData.team_name,        // Changed from teamName
+      auditData.status || 'draft',
+      auditData.notes || null,
+      auditData.total_score || 0,
+      auditData.percentage_score || 0,
+      auditData.submitted_at || new Date().toISOString()
+    ];
 
-    if (error) throw error;
-    return { success: true, data: data[0] };
+    const result = await pool.query(query, values);
+    return { success: true, data: result.rows[0] };
   } catch (error) {
+    console.error('Create audit error:', error);
     return { success: false, error: error.message };
   }
 }
+
 
 // ============================================
 // 2. GET AUDIT BY ID
 // ============================================
 async function getAuditById(auditId) {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .eq('audit_id', auditId)
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
+    const query = 'SELECT * FROM audits WHERE audit_id = $1;';
+    const result = await pool.query(query, [auditId]);
+    
+    if (result.rows.length === 0) {
+      return { success: false, error: 'Audit not found' };
+    }
+    
+    return { success: true, data: result.rows[0] };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -55,33 +63,76 @@ async function getAuditById(auditId) {
 // ============================================
 async function getAudits(filters = {}) {
   try {
-    let query = supabase.from('audits').select('*');
+    let query = 'SELECT * FROM audits WHERE 1=1';
+    const values = [];
+    let paramCount = 1;
 
     if (filters.locationId) {
-      query = query.eq('location_id', filters.locationId);
+      query += ` AND location_id = $${paramCount}`;
+      values.push(filters.locationId);
+      paramCount++;
     }
+
     if (filters.auditTypeId) {
-      query = query.eq('audit_type_id', filters.auditTypeId);
+      query += ` AND audit_type_id = $${paramCount}`;
+      values.push(filters.auditTypeId);
+      paramCount++;
     }
+
     if (filters.status) {
-      query = query.eq('status', filters.status);
+      query += ` AND status = $${paramCount}`;
+      values.push(filters.status);
+      paramCount++;
     }
+
     if (filters.teamId) {
-      query = query.eq('team_id', filters.teamId);
+      query += ` AND team_id = $${paramCount}`;
+      values.push(filters.teamId);
+      paramCount++;
     }
 
-    // Order by date descending
-    query = query.order('audit_date', { ascending: false });
+    query += ' ORDER BY audit_date DESC';
 
-    // Pagination
     const limit = filters.limit || 10;
     const offset = filters.offset || 0;
-    query = query.range(offset, offset + limit - 1);
+    query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+    values.push(limit, offset);
 
-    const { data, error, count } = await query;
+    const result = await pool.query(query, values);
+    
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) FROM audits WHERE 1=1';
+    const countValues = [];
+    let countParamCount = 1;
 
-    if (error) throw error;
-    return { success: true, data, count };
+    if (filters.locationId) {
+      countQuery += ` AND location_id = $${countParamCount}`;
+      countValues.push(filters.locationId);
+      countParamCount++;
+    }
+
+    if (filters.auditTypeId) {
+      countQuery += ` AND audit_type_id = $${countParamCount}`;
+      countValues.push(filters.auditTypeId);
+      countParamCount++;
+    }
+
+    if (filters.status) {
+      countQuery += ` AND status = $${countParamCount}`;
+      countValues.push(filters.status);
+      countParamCount++;
+    }
+
+    if (filters.teamId) {
+      countQuery += ` AND team_id = $${countParamCount}`;
+      countValues.push(filters.teamId);
+      countParamCount++;
+    }
+
+    const countResult = await pool.query(countQuery, countValues);
+    const count = parseInt(countResult.rows[0].count);
+
+    return { success: true, data: result.rows, count };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -92,23 +143,28 @@ async function getAudits(filters = {}) {
 // ============================================
 async function insertAuditResponses(auditId, responses) {
   try {
-    const responsesToInsert = responses.map(response => ({
-      audit_id: auditId,
-      checkpoint_id: response.checkpointId,
-      section_id: response.sectionId,
-      abnormalities_found: response.abnormalities,
-      points_awarded: response.points,
-      comments: response.comments || null,
-      evidence_url: response.evidenceUrl || null
-    }));
+    const query = `
+      INSERT INTO audit_responses (audit_id, checkpoint_id, section_id, abnormalities_found, points_awarded, comments, evidence_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *;
+    `;
 
-    const { data, error } = await supabase
-      .from('audit_responses')
-      .insert(responsesToInsert)
-      .select();
+    const results = [];
+    for (const response of responses) {
+      const values = [
+        auditId,
+        response.checkpointId,
+        response.sectionId,
+        response.abnormalities,
+        response.points,
+        response.comments || null,
+        response.evidenceUrl || null
+      ];
+      const result = await pool.query(query, values);
+      results.push(result.rows[0]);
+    }
 
-    if (error) throw error;
-    return { success: true, data };
+    return { success: true, data: results };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -119,26 +175,30 @@ async function insertAuditResponses(auditId, responses) {
 // ============================================
 async function saveAuditCalculations(auditId, calculations) {
   try {
-    const calculationsToInsert = calculations.sectionBreakdowns.map(section => ({
-      audit_id: auditId,
-      section_id: section.sectionId,
-      section_score: section.baseScore,
-      section_percentage: (section.baseScore / section.maxPoints) * 100,
-      penalties_applied: JSON.stringify(section.penalties),
-      final_section_score: section.finalScore
-    }));
+    const query = `
+      INSERT INTO audit_calculations (audit_id, section_id, section_score, section_percentage, penalties_applied, final_section_score)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *;
+    `;
 
-    const { data, error } = await supabase
-      .from('audit_calculations')
-      .insert(calculationsToInsert)
-      .select();
-
-    if (error) throw error;
+    const results = [];
+    for (const section of calculations.sectionBreakdowns) {
+      const values = [
+        auditId,
+        section.sectionId,
+        section.baseScore,
+        (section.baseScore / section.maxPoints) * 100,
+        JSON.stringify(section.penalties),
+        section.finalScore
+      ];
+      const result = await pool.query(query, values);
+      results.push(result.rows[0]);
+    }
 
     // Update audit with total score
-    const updateResult = await updateAuditScore(auditId, calculations.totalScore, calculations.percentageScore);
+    await updateAuditScore(auditId, calculations.totalScore, calculations.percentageScore);
 
-    return { success: true, data };
+    return { success: true, data: results };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -149,18 +209,15 @@ async function saveAuditCalculations(auditId, calculations) {
 // ============================================
 async function updateAuditScore(auditId, totalScore, percentageScore) {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .update({
-        total_score: totalScore,
-        percentage_score: percentageScore,
-        updated_at: new Date()
-      })
-      .eq('audit_id', auditId)
-      .select();
-
-    if (error) throw error;
-    return { success: true, data: data[0] };
+    const query = `
+      UPDATE audits 
+      SET total_score = $1, percentage_score = $2, updated_at = NOW()
+      WHERE audit_id = $3
+      RETURNING *;
+    `;
+    
+    const result = await pool.query(query, [totalScore, percentageScore, auditId]);
+    return { success: true, data: result.rows[0] };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -171,27 +228,15 @@ async function updateAuditScore(auditId, totalScore, percentageScore) {
 // ============================================
 async function submitAudit(auditId, userId) {
   try {
-    const { data, error } = await supabase
-      .from('audits')
-      .update({
-        status: 'submitted',
-        submitted_at: new Date(),
-        updated_at: new Date()
-      })
-      .eq('audit_id', auditId)
-      .select();
-
-    if (error) throw error;
-
-    // Log to audit history
-    await supabase.from('audit_history').insert([{
-      audit_id: auditId,
-      action: 'submitted',
-      changed_by: userId,
-      changes: JSON.stringify({ status: 'submitted' })
-    }]);
-
-    return { success: true, data: data[0] };
+    const query = `
+      UPDATE audits 
+      SET status = 'submitted', submitted_at = NOW(), updated_at = NOW()
+      WHERE audit_id = $1
+      RETURNING *;
+    `;
+    
+    const result = await pool.query(query, [auditId]);
+    return { success: true, data: result.rows[0] };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -202,16 +247,15 @@ async function submitAudit(auditId, userId) {
 // ============================================
 async function getAuditTrends(locationId, auditTypeId, weeks = 12) {
   try {
-    const { data, error } = await supabase
-      .from('audit_trends')
-      .select('*')
-      .eq('location_id', locationId)
-      .eq('audit_type_id', auditTypeId)
-      .order('audit_date', { ascending: false })
-      .limit(weeks);
-
-    if (error) throw error;
-    return { success: true, data };
+    const query = `
+      SELECT * FROM audit_trends 
+      WHERE location_id = $1 AND audit_type_id = $2
+      ORDER BY audit_date DESC
+      LIMIT $3;
+    `;
+    
+    const result = await pool.query(query, [locationId, auditTypeId, weeks]);
+    return { success: true, data: result.rows };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -222,14 +266,14 @@ async function getAuditTrends(locationId, auditTypeId, weeks = 12) {
 // ============================================
 async function getAuditSections(auditTypeId) {
   try {
-    const { data, error } = await supabase
-      .from('audit_sections')
-      .select('*')
-      .eq('audit_type_id', auditTypeId)
-      .order('order_number', { ascending: true });
-
-    if (error) throw error;
-    return { success: true, data };
+    const query = `
+      SELECT * FROM audit_sections 
+      WHERE audit_type_id = $1
+      ORDER BY order_number ASC;
+    `;
+    
+    const result = await pool.query(query, [auditTypeId]);
+    return { success: true, data: result.rows };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -240,14 +284,14 @@ async function getAuditSections(auditTypeId) {
 // ============================================
 async function getCheckpointsForSection(sectionId) {
   try {
-    const { data, error } = await supabase
-      .from('audit_checkpoints')
-      .select('*')
-      .eq('section_id', sectionId)
-      .order('order_number', { ascending: true });
-
-    if (error) throw error;
-    return { success: true, data };
+    const query = `
+      SELECT * FROM audit_checkpoints 
+      WHERE section_id = $1
+      ORDER BY order_number ASC;
+    `;
+    
+    const result = await pool.query(query, [sectionId]);
+    return { success: true, data: result.rows };
   } catch (error) {
     return { success: false, error: error.message };
   }

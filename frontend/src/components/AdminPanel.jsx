@@ -1,46 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import {
-  getUsers,
-  createUser,
-  updateUser,
-  deleteUser,
-  getRoles,
-  getLocations,
-  createLocation,
-  updateLocation,
-  deleteLocation
-} from '../services/adminService';
+import axios from 'axios';
+import { locationsList } from '../data/locations';
 
 const AdminPanel = () => {
-  const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
-  const [locations, setLocations] = useState([]);
-  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
   // Form states
   const [showUserForm, setShowUserForm] = useState(false);
-  const [showLocationForm, setShowLocationForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [editingLocation, setEditingLocation] = useState(null);
 
   // Form data
   const [userFormData, setUserFormData] = useState({
     name: '',
     email: '',
-    role_id: '',
+    password: '',
+    role: 'auditor',
     location_id: '',
-    is_active: true
+    gembas: []
   });
 
-  const [locationFormData, setLocationFormData] = useState({
-    location_name: '',
-    location_type: 'warehouse'
-  });
-
-  const DEFAULT_ORG_ID = 'fb04f2f4-8cb8-4b3f-8041-133886194754';
+  const token = localStorage.getItem('token');
+  const API_URL = 'http://localhost:5001/api';
 
   // Load data on mount
   useEffect(() => {
@@ -52,15 +35,11 @@ const AdminPanel = () => {
       setLoading(true);
       setError(null);
 
-      const [usersData, rolesData, locationsData] = await Promise.all([
-        getUsers(),
-        getRoles(),
-        getLocations()
-      ]);
+      const usersResponse = await axios.get(`${API_URL}/users`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      setUsers(usersData);
-      setRoles(rolesData);
-      setLocations(locationsData);
+      setUsers(usersResponse.data);
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Failed to load data. Please try again.');
@@ -75,9 +54,10 @@ const AdminPanel = () => {
     setUserFormData({
       name: '',
       email: '',
-      role_id: '',
+      password: '',
+      role: 'auditor',
       location_id: '',
-      is_active: true
+      gembas: []
     });
     setShowUserForm(true);
   };
@@ -87,30 +67,47 @@ const AdminPanel = () => {
     setUserFormData({
       name: user.name,
       email: user.email,
-      role_id: user.role_id,
-      location_id: user.location_id,
-      is_active: user.is_active
+      password: '',
+      role: user.role,
+      location_id: user.location_id || '',
+      gembas: user.gembas || []
     });
     setShowUserForm(true);
   };
 
   const handleSaveUser = async () => {
     try {
-      if (!userFormData.name || !userFormData.email || !userFormData.role_id) {
+      if (!userFormData.name || !userFormData.email || !userFormData.role) {
         setError('Please fill in all required fields');
         return;
       }
 
+      if (!editingUser && !userFormData.password) {
+        setError('Password is required for new users');
+        return;
+      }
+
       const payload = {
-        ...userFormData,
-        org_id: DEFAULT_ORG_ID
+        name: userFormData.name,
+        email: userFormData.email,
+        role: userFormData.role,
+        location_id: userFormData.location_id || null,
+        gembas: userFormData.gembas
       };
 
+      if (userFormData.password) {
+        payload.password = userFormData.password;
+      }
+
       if (editingUser) {
-        await updateUser(editingUser.user_id, payload);
+        await axios.put(`${API_URL}/users/${editingUser.user_id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         setSuccess('User updated successfully');
       } else {
-        await createUser(payload);
+        await axios.post(`${API_URL}/auth/register`, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         setSuccess('User created successfully');
       }
 
@@ -118,253 +115,200 @@ const AdminPanel = () => {
       await loadData();
     } catch (err) {
       console.error('Error saving user:', err);
-      setError(err.response?.data?.error || 'Failed to save user');
+      setError(err.response?.data?.message || 'Failed to save user');
     }
   };
 
   const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
-        await deleteUser(userId);
+        await axios.delete(`${API_URL}/users/${userId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         setSuccess('User deleted successfully');
         await loadData();
       } catch (err) {
         console.error('Error deleting user:', err);
-        setError(err.response?.data?.error || 'Failed to delete user');
+        setError(err.response?.data?.message || 'Failed to delete user');
       }
     }
   };
 
-  const handleToggleUserStatus = async (user) => {
-    try {
-      await updateUser(user.user_id, {
-        ...user,
-        is_active: !user.is_active
-      });
-      setSuccess(`User ${!user.is_active ? 'enabled' : 'disabled'} successfully`);
-      await loadData();
-    } catch (err) {
-      console.error('Error toggling user status:', err);
-      setError(err.response?.data?.error || 'Failed to update user status');
-    }
+  const handleGembaChange = (gemba) => {
+    setUserFormData(prev => ({
+      ...prev,
+      gembas: prev.gembas.includes(gemba)
+        ? prev.gembas.filter(g => g !== gemba)
+        : [...prev.gembas, gemba]
+    }));
   };
 
-  // Location handlers
-  const handleAddLocation = () => {
-    setEditingLocation(null);
-    setLocationFormData({
-      location_name: '',
-      location_type: 'warehouse'
-    });
-    setShowLocationForm(true);
-  };
+  // ==================== STYLES ====================
 
-  const handleEditLocation = (location) => {
-    setEditingLocation(location);
-    setLocationFormData({
-      location_name: location.location_name,
-      location_type: location.location_type
-    });
-    setShowLocationForm(true);
-  };
-
-  const handleSaveLocation = async () => {
-    try {
-      if (!locationFormData.location_name) {
-        setError('Please fill in all required fields');
-        return;
-      }
-
-      const payload = {
-        ...locationFormData,
-        org_id: DEFAULT_ORG_ID
-      };
-
-      if (editingLocation) {
-        await updateLocation(editingLocation.location_id, payload);
-        setSuccess('Location updated successfully');
-      } else {
-        await createLocation(payload);
-        setSuccess('Location created successfully');
-      }
-
-      setShowLocationForm(false);
-      await loadData();
-    } catch (err) {
-      console.error('Error saving location:', err);
-      setError(err.response?.data?.error || 'Failed to save location');
-    }
-  };
-
-  const handleDeleteLocation = async (locationId) => {
-    if (window.confirm('Are you sure you want to delete this location?')) {
-      try {
-        await deleteLocation(locationId);
-        setSuccess('Location deleted successfully');
-        await loadData();
-      } catch (err) {
-        console.error('Error deleting location:', err);
-        setError(err.response?.data?.error || 'Failed to delete location');
-      }
-    }
-  };
-
-  // Styles
   const containerStyle = {
-    padding: '30px',
-    background: '#f5f5f5',
+    padding: '24px',
+    background: '#F5F7FA',
     minHeight: '100vh'
   };
 
   const headerStyle = {
-    marginBottom: '30px'
+    marginBottom: '24px'
   };
 
   const titleStyle = {
-    fontSize: '32px',
+    fontSize: '20px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '10px'
+    color: '#2C3E50',
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
-  const tabsStyle = {
-    display: 'flex',
-    gap: '10px',
-    marginBottom: '30px',
-    borderBottom: '2px solid #e5e7eb'
+  const subtitleStyle = {
+    color: '#999',
+    fontSize: '13px',
+    fontWeight: '500'
   };
-
-  const tabStyle = (isActive) => ({
-    padding: '12px 24px',
-    border: 'none',
-    background: 'transparent',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: isActive ? '#1E40AF' : '#666',
-    borderBottom: isActive ? '3px solid #1E40AF' : 'none',
-    transition: 'all 0.3s'
-  });
 
   const cardStyle = {
     background: 'white',
-    padding: '30px',
+    padding: '20px',
     borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-    marginBottom: '30px'
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    marginBottom: '24px',
+    border: '1px solid #E8EAED'
   };
 
   const sectionTitleStyle = {
-    fontSize: '20px',
+    fontSize: '16px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '20px',
-    paddingBottom: '15px',
-    borderBottom: '2px solid #e5e7eb'
+    color: '#2C3E50',
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #E8EAED',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const buttonStyle = {
-    padding: '10px 20px',
+    padding: '8px 16px',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    transition: 'all 0.3s'
+    fontSize: '12px',
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const primaryButtonStyle = {
     ...buttonStyle,
-    background: '#1E40AF',
+    background: '#2C3E50',
     color: 'white'
   };
 
   const secondaryButtonStyle = {
     ...buttonStyle,
-    background: '#6b7280',
-    color: 'white'
+    background: '#E8EAED',
+    color: '#2C3E50'
   };
 
   const dangerButtonStyle = {
     ...buttonStyle,
-    background: '#EF4444',
+    background: '#E74C3C',
     color: 'white',
-    padding: '6px 12px',
-    fontSize: '12px'
+    padding: '4px 10px',
+    fontSize: '11px'
   };
 
   const tableStyle = {
     width: '100%',
     borderCollapse: 'collapse',
-    marginTop: '20px'
+    marginTop: '16px'
   };
 
   const theadStyle = {
-    background: '#1E40AF',
-    color: 'white'
+    background: '#F5F7FA',
+    borderBottom: '2px solid #E8EAED'
   };
 
   const thStyle = {
     padding: '12px',
     textAlign: 'left',
-    fontSize: '13px',
-    fontWeight: '600'
+    fontSize: '11px',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    color: '#2C3E50'
   };
 
   const tdStyle = {
     padding: '12px',
-    borderBottom: '1px solid #e5e7eb',
-    fontSize: '13px'
+    borderBottom: '1px solid #E8EAED',
+    fontSize: '13px',
+    color: '#2C3E50'
   };
 
-  const statusBadgeStyle = (isActive) => ({
+  const statusBadgeStyle = (status) => ({
     display: 'inline-block',
-    padding: '4px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '600',
-    background: isActive ? '#D1FAE5' : '#FEE2E2',
-    color: isActive ? '#065F46' : '#991B1B'
+    padding: '4px 10px',
+    borderRadius: '12px',
+    fontSize: '10px',
+    fontWeight: '700',
+    background: status === 'active' ? 'rgba(39, 174, 96, 0.1)' : 'rgba(231, 76, 60, 0.1)',
+    color: status === 'active' ? '#27AE60' : '#E74C3C',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   });
 
   const roleBadgeStyle = (role) => {
     const colors = {
-      admin: { bg: '#DBEAFE', color: '#1E40AF' },
-      manager: { bg: '#FEF3C7', color: '#92400E' },
-      auditor: { bg: '#E0E7FF', color: '#3730A3' }
+      admin: { bg: 'rgba(44, 62, 80, 0.1)', color: '#2C3E50' },
+      coordinator: { bg: 'rgba(255, 213, 79, 0.1)', color: '#F39C12' },
+      manager: { bg: 'rgba(52, 152, 219, 0.1)', color: '#3498DB' },
+      auditor: { bg: 'rgba(155, 89, 182, 0.1)', color: '#9B59B6' }
     };
+
     const style = colors[role] || colors.auditor;
+
     return {
       display: 'inline-block',
-      padding: '4px 12px',
-      borderRadius: '20px',
-      fontSize: '12px',
-      fontWeight: '600',
+      padding: '4px 10px',
+      borderRadius: '12px',
+      fontSize: '10px',
+      fontWeight: '700',
       background: style.bg,
-      color: style.color
+      color: style.color,
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px'
     };
   };
 
   const formGroupStyle = {
-    marginBottom: '20px'
+    marginBottom: '16px'
   };
 
   const labelStyle = {
     display: 'block',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: '8px'
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: '6px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const inputStyle = {
     width: '100%',
-    padding: '10px 12px',
-    border: '1px solid #ddd',
+    padding: '8px 12px',
+    border: '1px solid #E8EAED',
     borderRadius: '6px',
-    fontSize: '14px',
+    fontSize: '13px',
     fontFamily: 'inherit',
-    boxSizing: 'border-box'
+    boxSizing: 'border-box',
+    color: '#2C3E50',
+    transition: 'all 0.3s ease'
   };
 
   const selectStyle = {
@@ -387,40 +331,66 @@ const AdminPanel = () => {
   const modalStyle = {
     background: 'white',
     borderRadius: '8px',
-    padding: '30px',
-    maxWidth: '500px',
+    padding: '24px',
+    maxWidth: '450px',
     width: '90%',
-    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)'
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    border: '1px solid #E8EAED'
   };
 
   const modalHeaderStyle = {
-    fontSize: '20px',
+    fontSize: '16px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '20px'
+    color: '#2C3E50',
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #E8EAED',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const modalButtonGroupStyle = {
     display: 'flex',
-    gap: '10px',
-    marginTop: '20px',
+    gap: '8px',
+    marginTop: '16px',
     justifyContent: 'flex-end'
   };
 
   const loadingStyle = {
     textAlign: 'center',
     padding: '40px',
-    fontSize: '18px',
-    color: '#666'
+    fontSize: '16px',
+    color: '#999',
+    fontWeight: '600'
   };
 
   const alertStyle = (type) => ({
-    padding: '15px',
-    borderRadius: '8px',
+    padding: '12px',
+    borderRadius: '6px',
     marginBottom: '20px',
-    background: type === 'error' ? '#FEE2E2' : '#D1FAE5',
-    color: type === 'error' ? '#991B1B' : '#065F46'
+    background: type === 'error' ? 'rgba(231, 76, 60, 0.1)' : 'rgba(39, 174, 96, 0.1)',
+    color: type === 'error' ? '#E74C3C' : '#27AE60',
+    borderLeft: `3px solid ${type === 'error' ? '#E74C3C' : '#27AE60'}`,
+    fontWeight: '600',
+    fontSize: '13px'
   });
+
+  const gembaContainerStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+    gap: '8px',
+    marginTop: '8px'
+  };
+
+  const checkboxLabelStyle = {
+    fontSize: '12px',
+    color: '#2C3E50',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center'
+  };
 
   if (loading) {
     return <div style={containerStyle}><div style={loadingStyle}>Loading admin panel...</div></div>;
@@ -431,169 +401,86 @@ const AdminPanel = () => {
       {/* HEADER */}
       <div style={headerStyle}>
         <h1 style={titleStyle}>Admin Panel</h1>
-        <p style={{ color: '#666', fontSize: '16px' }}>Manage users, locations, and system settings</p>
+        <p style={subtitleStyle}>Manage users</p>
       </div>
 
       {/* ALERTS */}
       {error && <div style={alertStyle('error')}>{error}</div>}
       {success && <div style={alertStyle('success')}>{success}</div>}
 
-      {/* TABS */}
-      <div style={tabsStyle}>
-        <button
-          style={tabStyle(activeTab === 'users')}
-          onClick={() => setActiveTab('users')}
-        >
-          👥 Users
-        </button>
-        <button
-          style={tabStyle(activeTab === 'locations')}
-          onClick={() => setActiveTab('locations')}
-        >
-          📍 Locations
-        </button>
-        <button
-          style={tabStyle(activeTab === 'settings')}
-          onClick={() => setActiveTab('settings')}
-        >
-          ⚙️ Settings
-        </button>
-      </div>
+      {/* USER MANAGEMENT */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={sectionTitleStyle}>User Management</h2>
+          <button
+            onClick={handleAddUser}
+            style={primaryButtonStyle}
+            onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+            onMouseLeave={(e) => e.target.style.opacity = '1'}
+          >
+            Add User
+          </button>
+        </div>
 
-      {/* USERS TAB */}
-      {activeTab === 'users' && (
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={sectionTitleStyle}>User Management</h2>
-            <button
-              onClick={handleAddUser}
-              style={primaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-              onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
-            >
-              + Add User
-            </button>
-          </div>
+        {users.length === 0 ? (
+          <p style={{ textAlign: 'center', color: '#999', padding: '30px', fontSize: '13px' }}>No users found</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tableStyle}>
+              <thead style={theadStyle}>
+                <tr>
+                  <th style={thStyle}>Name</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>Role</th>
+                  <th style={thStyle}>Gembas</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Actions</th>
+                </tr>
+              </thead>
 
-          <table style={tableStyle}>
-            <thead style={theadStyle}>
-              <tr>
-                <th style={thStyle}>Name</th>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>Role</th>
-                <th style={thStyle}>Location</th>
-                <th style={thStyle}>Status</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => {
-                const userRole = roles.find(r => r.role_id === user.role_id);
-                const userLocation = locations.find(l => l.location_id === user.location_id);
-                
-                return (
+              <tbody>
+                {users.map(user => (
                   <tr key={user.user_id}>
                     <td style={tdStyle}>{user.name}</td>
                     <td style={tdStyle}>{user.email}</td>
                     <td style={tdStyle}>
-                      <span style={roleBadgeStyle(userRole?.role_name || 'auditor')}>
-                        {userRole?.role_name?.charAt(0).toUpperCase() + userRole?.role_name?.slice(1) || 'Auditor'}
+                      <span style={roleBadgeStyle(user.role)}>
+                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                       </span>
                     </td>
-                    <td style={tdStyle}>{userLocation?.location_name || 'All'}</td>
                     <td style={tdStyle}>
-                      <span style={statusBadgeStyle(user.is_active)}>
+                      {user.gembas && user.gembas.length > 0 ? user.gembas.join(', ') : '-'}
+                    </td>
+                    <td style={tdStyle}>
+                      <span style={statusBadgeStyle(user.is_active ? 'active' : 'inactive')}>
                         {user.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td style={tdStyle}>
                       <button
                         onClick={() => handleEditUser(user)}
-                        style={{ ...buttonStyle, background: '#3B82F6', color: 'white', marginRight: '5px' }}
+                        style={{ ...buttonStyle, background: '#3498DB', color: 'white', marginRight: '4px', padding: '4px 10px', fontSize: '11px' }}
+                        onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                        onMouseLeave={(e) => e.target.style.opacity = '1'}
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() => handleToggleUserStatus(user)}
-                        style={{ ...buttonStyle, background: '#F59E0B', color: 'white', marginRight: '5px' }}
-                      >
-                        {user.is_active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
                         onClick={() => handleDeleteUser(user.user_id)}
                         style={dangerButtonStyle}
+                        onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                        onMouseLeave={(e) => e.target.style.opacity = '1'}
                       >
                         Delete
                       </button>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* LOCATIONS TAB */}
-      {activeTab === 'locations' && (
-        <div style={cardStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={sectionTitleStyle}>Location Management</h2>
-            <button
-              onClick={handleAddLocation}
-              style={primaryButtonStyle}
-              onMouseEnter={(e) => e.target.style.background = '#1e3a8a'}
-              onMouseLeave={(e) => e.target.style.background = '#1E40AF'}
-            >
-              + Add Location
-            </button>
+                ))}
+              </tbody>
+            </table>
           </div>
-
-          <table style={tableStyle}>
-            <thead style={theadStyle}>
-              <tr>
-                <th style={thStyle}>Location Name</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {locations.map(location => (
-                <tr key={location.location_id}>
-                  <td style={tdStyle}>{location.location_name}</td>
-                  <td style={tdStyle}>
-                    {location.location_type?.charAt(0).toUpperCase() + location.location_type?.slice(1)}
-                  </td>
-                  <td style={tdStyle}>
-                    <button
-                      onClick={() => handleEditLocation(location)}
-                      style={{ ...buttonStyle, background: '#3B82F6', color: 'white', marginRight: '5px' }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteLocation(location.location_id)}
-                      style={dangerButtonStyle}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* SETTINGS TAB */}
-      {activeTab === 'settings' && (
-        <div style={cardStyle}>
-          <h2 style={sectionTitleStyle}>System Settings</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>
-            Settings coming soon...
-          </p>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* USER FORM MODAL */}
       {showUserForm && (
@@ -604,7 +491,7 @@ const AdminPanel = () => {
             </div>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Name *</label>
+              <label style={labelStyle}>Name</label>
               <input
                 type="text"
                 value={userFormData.name}
@@ -615,47 +502,60 @@ const AdminPanel = () => {
             </div>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Email *</label>
+              <label style={labelStyle}>Email</label>
               <input
                 type="email"
                 value={userFormData.email}
                 onChange={(e) => setUserFormData({ ...userFormData, email: e.target.value })}
                 style={inputStyle}
-                placeholder="Email address"
+                placeholder="user@capwell.co.ke"
+                disabled={!!editingUser}
               />
             </div>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Role *</label>
-              <select
-                value={userFormData.role_id}
-                onChange={(e) => setUserFormData({ ...userFormData, role_id: e.target.value })}
-                style={selectStyle}
-              >
-                <option value="">-- Select role --</option>
-                {roles.map(role => (
-                  <option key={role.role_id} value={role.role_id}>
-                    {role.role_name.charAt(0).toUpperCase() + role.role_name.slice(1)}
-                  </option>
-                ))}
-              </select>
+              <label style={labelStyle}>Password {editingUser && '(optional)'}</label>
+              <input
+                type="password"
+                value={userFormData.password}
+                onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
+                style={inputStyle}
+                placeholder="Enter password"
+              />
             </div>
 
             <div style={formGroupStyle}>
-              <label style={labelStyle}>Location</label>
+              <label style={labelStyle}>Role</label>
               <select
-                value={userFormData.location_id || ''}
-                onChange={(e) => setUserFormData({ ...userFormData, location_id: e.target.value || null })}
+                value={userFormData.role}
+                onChange={(e) => setUserFormData({ ...userFormData, role: e.target.value })}
                 style={selectStyle}
               >
-                <option value="">-- Select location --</option>
-                {locations.map(loc => (
-                  <option key={loc.location_id} value={loc.location_id}>
-                    {loc.location_name}
-                  </option>
-                ))}
+                <option value="auditor">Auditor</option>
+                <option value="manager">Manager</option>
+                <option value="coordinator">Coordinator</option>
+                <option value="admin">Admin</option>
               </select>
             </div>
+
+            {userFormData.role === 'auditor' && (
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Assign Gembas</label>
+                <div style={gembaContainerStyle}>
+                  {locationsList.map(gemba => (
+                    <label key={gemba} style={checkboxLabelStyle}>
+                      <input
+                        type="checkbox"
+                        checked={userFormData.gembas.includes(gemba)}
+                        onChange={() => handleGembaChange(gemba)}
+                        style={{ marginRight: '6px', cursor: 'pointer' }}
+                      />
+                      {gemba}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={modalButtonGroupStyle}>
               <button
@@ -664,6 +564,7 @@ const AdminPanel = () => {
               >
                 Cancel
               </button>
+
               <button
                 onClick={handleSaveUser}
                 style={primaryButtonStyle}
@@ -674,59 +575,8 @@ const AdminPanel = () => {
           </div>
         </div>
       )}
-
-      {/* LOCATION FORM MODAL */}
-      {showLocationForm && (
-        <div style={modalOverlayStyle} onClick={() => setShowLocationForm(false)}>
-          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <div style={modalHeaderStyle}>
-              {editingLocation ? 'Edit Location' : 'Add New Location'}
-            </div>
-
-            <div style={formGroupStyle}>
-              <label style={labelStyle}>Location Name *</label>
-              <input
-                type="text"
-                value={locationFormData.location_name}
-                onChange={(e) => setLocationFormData({ ...locationFormData, location_name: e.target.value })}
-                style={inputStyle}
-                placeholder="Location name"
-              />
-            </div>
-
-            <div style={formGroupStyle}>
-              <label style={labelStyle}>Type *</label>
-              <select
-                value={locationFormData.location_type}
-                onChange={(e) => setLocationFormData({ ...locationFormData, location_type: e.target.value })}
-                style={selectStyle}
-              >
-                <option value="warehouse">Warehouse</option>
-                <option value="shopfloor">Shopfloor</option>
-                <option value="laboratory">Laboratory</option>
-              </select>
-            </div>
-
-            <div style={modalButtonGroupStyle}>
-              <button
-                onClick={() => setShowLocationForm(false)}
-                style={secondaryButtonStyle}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveLocation}
-                style={primaryButtonStyle}
-              >
-                {editingLocation ? 'Update' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 export default AdminPanel;
-

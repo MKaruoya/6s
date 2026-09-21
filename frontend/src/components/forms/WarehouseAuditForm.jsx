@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
-import { locationsList } from '../../data/locations'; 
+import { locationsList } from '../../data/locations';
+import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
+import { compressAndConvertToBase64, validateImage } from '../../utils/imageUtils';
 import '../../styles/AuditForm.css';
 
 const WarehouseAuditForm = () => {
@@ -9,6 +11,10 @@ const WarehouseAuditForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [showActionItemsModal, setShowActionItemsModal] = useState(false);
+  const [auditId, setAuditId] = useState(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
 
   const auditData = auditCheckpoints.warehouse;
 
@@ -54,9 +60,10 @@ const WarehouseAuditForm = () => {
     const pointsPerCheckpoint = maxPoints / checkpointCount;
 
     let score = 0;
-    Object.values(section.checkpoints).forEach(abnormalities => {
-      if (abnormalities !== undefined) {
-        score += calculateCheckpointScore(abnormalities, pointsPerCheckpoint);
+    Object.entries(section.checkpoints).forEach(([key, value]) => {
+      // Skip photo entries
+      if (!key.startsWith('photo_') && value !== undefined) {
+        score += calculateCheckpointScore(value, pointsPerCheckpoint);
       }
     });
 
@@ -76,20 +83,17 @@ const WarehouseAuditForm = () => {
     return Math.round((total / auditData.maxScore) * 100 * 100) / 100;
   };
 
-  // Calculate 6S scores for storage
-   // Calculate 6S scores for storage (as percentages)
-const calculate6SScores = () => {
-  const sixSScores = {};
-  auditData.sections.forEach(section => {
-    const sectionScore = calculateSectionScore(section.code);
-    const maxPoints = section.maxPoints;
-    // Convert to percentage
-    const percentage = maxPoints > 0 ? Math.round((sectionScore / maxPoints) * 100) : 0;
-    sixSScores[section.code] = percentage;
-  });
-  return sixSScores;
-};
-
+  // Calculate 6S scores for storage (as percentages)
+  const calculate6SScores = () => {
+    const sixSScores = {};
+    auditData.sections.forEach(section => {
+      const sectionScore = calculateSectionScore(section.code);
+      const maxPoints = section.maxPoints;
+      const percentage = maxPoints > 0 ? Math.round((sectionScore / maxPoints) * 100) : 0;
+      sixSScores[section.code] = percentage;
+    });
+    return sixSScores;
+  };
 
   // HANDLERS
   const handleInputChange = (e) => {
@@ -129,6 +133,63 @@ const calculate6SScores = () => {
     }));
   };
 
+  const handlePhotoUpload = async (sectionCode, checkpointIndex, file) => {
+    if (!file) return;
+
+    try {
+      setPhotoError(null);
+      setPhotoLoading(true);
+
+      // Validate image
+      const validation = validateImage(file);
+      if (!validation.valid) {
+        setPhotoError(validation.error);
+        setPhotoLoading(false);
+        return;
+      }
+
+      // Compress and convert to base64
+      const base64 = await compressAndConvertToBase64(file, 0.5);
+
+      // Store in form state
+      setFormData(prev => ({
+        ...prev,
+        sections: {
+          ...prev.sections,
+          [sectionCode]: {
+            ...prev.sections[sectionCode],
+            checkpoints: {
+              ...prev.sections[sectionCode].checkpoints,
+              [`photo_${checkpointIndex}`]: base64
+            }
+          }
+        }
+      }));
+
+      setPhotoLoading(false);
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      setPhotoError(error.message || 'Failed to upload photo');
+      setPhotoLoading(false);
+    }
+  };
+
+  const handleRemovePhoto = (sectionCode, checkpointIndex) => {
+    setFormData(prev => ({
+      ...prev,
+      sections: {
+        ...prev.sections,
+        [sectionCode]: {
+          ...prev.sections[sectionCode],
+          checkpoints: {
+            ...prev.sections[sectionCode].checkpoints,
+            [`photo_${checkpointIndex}`]: null
+          }
+        }
+      }
+    }));
+  };
+
   const handleNext = () => {
     if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
@@ -149,9 +210,7 @@ const calculate6SScores = () => {
     setError(null);
 
     try {
-      // Calculate 6S scores
       const sixSScores = calculate6SScores();
-
       const auditPayload = {
         auditType: 'warehouse',
         location: formData.gemba,
@@ -162,19 +221,27 @@ const calculate6SScores = () => {
         totalScore: calculateTotalScore(),
         percentage: calculatePercentage(),
         sections: formData.sections,
-        sixSScores: sixSScores  // ADD 6S SCORES
+        sixSScores: sixSScores
       };
 
-      await saveAudit(auditPayload);
-
+      const response = await saveAudit(auditPayload);
       console.log('Warehouse audit saved successfully:', auditPayload);
-      setSuccess(true);
+      
+      // Store audit ID for action items
+      setAuditId(response.audit_id || response.id);
+      
       setLoading(false);
+      setShowActionItemsModal(true);
     } catch (err) {
       setError(err.message || 'Failed to submit audit');
       console.error('Submit error:', err);
       setLoading(false);
     }
+  };
+
+  const handleActionItemsSuccess = () => {
+    setShowActionItemsModal(false);
+    setSuccess(true);
   };
 
   const handleNewAudit = () => {
@@ -187,6 +254,8 @@ const calculate6SScores = () => {
       sections: {}
     });
     setSuccess(false);
+    setAuditId(null);
+    setPhotoError(null);
   };
 
   // STYLES
@@ -201,35 +270,61 @@ const calculate6SScores = () => {
   const checkmarkStyle = {
     fontSize: '64px',
     marginBottom: '20px',
-    color: '#10B981'
+    color: '#27AE60'
   };
 
   const successTitleStyle = {
     fontSize: '28px',
     fontWeight: '700',
-    color: '#1E40AF',
+    color: '#2C3E50',
     marginBottom: '10px'
   };
 
   const successMessageStyle = {
     fontSize: '16px',
-    color: '#666',
+    color: '#757575',
     marginBottom: '40px'
   };
 
   const newAuditBtnStyle = {
-    backgroundColor: '#10B981',
+    backgroundColor: '#27AE60',
     color: 'white',
     border: 'none',
     padding: '12px 32px',
-    borderRadius: '6px',
+    borderRadius: '8px',
     cursor: 'pointer',
     fontSize: '16px',
-    fontWeight: '600',
-    transition: 'all 0.3s'
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
-  // DEBUG LOG
+  const modalOverlayStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000
+  };
+
+  const modalStyle = {
+    background: 'white',
+    borderRadius: '8px',
+    padding: '24px',
+    maxWidth: '700px',
+    width: '90%',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    border: '1px solid #E8EAED'
+  };
+
   console.log('WarehouseAuditForm - Current step:', currentStep, 'Success:', success);
 
   return (
@@ -241,11 +336,13 @@ const calculate6SScores = () => {
             <h2>CAPWELL INDUSTRIES LIMITED</h2>
             <p>"The Home of Wholesome Brands"</p>
           </div>
+
           <div className="form-reference">
             <p><strong>Document:</strong> {auditData.code}</p>
             <p><strong>Revision:</strong> {auditData.revision}</p>
           </div>
         </div>
+
         <h1 className="form-title">{auditData.name}</h1>
         <p className="form-scope">Scope: {auditData.scope}</p>
         <p className="scoring-criteria">Scoring Criteria: {auditData.scoringCriteria}</p>
@@ -253,6 +350,7 @@ const calculate6SScores = () => {
 
       {/* ALERTS */}
       {error && <div className="alert alert-error">Error: {error}</div>}
+      {photoError && <div className="alert alert-error">Photo Error: {photoError}</div>}
 
       {/* FORM CONTENT */}
       <form onSubmit={handleSubmit} className="audit-form">
@@ -264,21 +362,22 @@ const calculate6SScores = () => {
             
             <div className="metadata-grid">
               <div className="form-group">
-  <label>GEMBA (Location) *</label>
-  <select 
-    name="gemba" 
-    value={formData.gemba}
-    onChange={handleInputChange}
-    required
-  >
-    <option value="">-- Select Location --</option>
-    {locationsList.map(location => (
-      <option key={location} value={location}>
-        {location}
-      </option>
-    ))}
-  </select>
-</div>
+                <label>GEMBA (Location) *</label>
+                <select 
+                  name="gemba" 
+                  value={formData.gemba}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">-- Select Location --</option>
+                  {locationsList.map(location => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="form-group">
                 <label>TEAM NAME *</label>
                 <input 
@@ -290,6 +389,7 @@ const calculate6SScores = () => {
                   required
                 />
               </div>
+
               <div className="form-group">
                 <label>AUDITOR(S) *</label>
                 <input 
@@ -301,6 +401,7 @@ const calculate6SScores = () => {
                   required
                 />
               </div>
+
               <div className="form-group">
                 <label>DATE *</label>
                 <input 
@@ -368,6 +469,58 @@ const calculate6SScores = () => {
                               section.maxPoints / section.checkpoints.length
                             ).toFixed(1)}
                           </span>
+                        )}
+                      </div>
+
+                      {/* PHOTO UPLOAD */}
+                      <div className="checkpoint-photo">
+                        <label 
+                          htmlFor={`photo-${section.code}-${idx}`} 
+                          className="photo-label"
+                          style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
+                        >
+                          {photoLoading ? '⏳ Uploading...' : '📷 Photo'}
+                        </label>
+                        <input
+                          id={`photo-${section.code}-${idx}`}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) => handlePhotoUpload(section.code, idx, e.target.files[0])}
+                          disabled={photoLoading}
+                          style={{ display: 'none' }}
+                        />
+                        {formData.sections[section.code]?.checkpoints?.[`photo_${idx}`] && (
+                          <div className="photo-preview">
+                            <img 
+                              src={formData.sections[section.code].checkpoints[`photo_${idx}`]} 
+                              alt="checkpoint"
+                              style={{ maxWidth: '80px', maxHeight: '80px', borderRadius: '4px' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePhoto(section.code, idx)}
+                              style={{
+                                position: 'absolute',
+                                top: '-8px',
+                                right: '-8px',
+                                background: '#E74C3C',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '50%',
+                                width: '20px',
+                                height: '20px',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: 'bold',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -450,9 +603,9 @@ const calculate6SScores = () => {
         {success && (
           <div style={successScreenStyle}>
             <div style={checkmarkStyle}>✓</div>
-            <h2 style={successTitleStyle}>Audit Submitted Successfully</h2>
+            <h2 style={successTitleStyle}>Audit & Action Items Submitted</h2>
             <p style={successMessageStyle}>
-              Your warehouse audit has been recorded and saved.
+              Your warehouse audit and action items have been recorded successfully.
             </p>
             <button
               type="button"
@@ -463,7 +616,7 @@ const calculate6SScores = () => {
                 e.target.style.transform = 'translateY(-2px)';
               }}
               onMouseLeave={(e) => {
-                e.target.style.backgroundColor = '#10B981';
+                e.target.style.backgroundColor = '#27AE60';
                 e.target.style.transform = 'translateY(0)';
               }}
             >
@@ -483,6 +636,7 @@ const calculate6SScores = () => {
             >
               ← Previous
             </button>
+
             <div className="step-indicator">
               {[1, 2, 3, 4, 5].map(step => (
                 <div 
@@ -492,6 +646,7 @@ const calculate6SScores = () => {
                 />
               ))}
             </div>
+
             {currentStep < 5 ? (
               <button 
                 type="button" 
@@ -512,6 +667,23 @@ const calculate6SScores = () => {
           </div>
         )}
       </form>
+
+      {/* ACTION ITEMS MODAL */}
+      {showActionItemsModal && auditId && (
+        <div style={modalOverlayStyle} onClick={() => setShowActionItemsModal(false)}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <CreateActionItemsFromAudit
+              auditId={auditId}
+              auditLocation={formData.gemba}
+              onClose={() => {
+                setShowActionItemsModal(false);
+                setSuccess(true);
+              }}
+              onSuccess={handleActionItemsSuccess}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

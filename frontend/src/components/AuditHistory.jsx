@@ -2,13 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { getAudits } from '../services/auditService';
 import * as XLSX from 'xlsx';
 
- const AUDIT_TYPE_MAP = {
-    '4c67665b-dd1f-43fa-87a5-a7d9477cf303': 'warehouse',
-    'bf0e6a59-a9b3-47f6-b6d5-18f0df806d45': 'shopfloor',
-    'e1d3647c-aa77-420b-b072-d131f7b1af6a': 'laboratory',
-    '5846ef78-480d-499f-92b1-ffdcc158fe93': 'internal'
-  };
-
+const AUDIT_TYPE_MAP = {
+  '4c67665b-dd1f-43fa-87a5-a7d9477cf303': 'warehouse',
+  'bf0e6a59-a9b3-47f6-b6d5-18f0df806d45': 'shopfloor',
+  'e1d3647c-aa77-420b-b072-d131f7b1af6a': 'laboratory',
+  '5846ef78-480d-499f-92b1-ffdcc158fe93': 'internal'
+};
 
 const AuditHistory = () => {
   const [audits, setAudits] = useState([]);
@@ -32,7 +31,6 @@ const AuditHistory = () => {
     internal: 'Internal'
   };
 
-
   const itemsPerPage = 20;
 
   // Fetch audits
@@ -43,28 +41,27 @@ const AuditHistory = () => {
         const data = await getAudits();
 
         const transformedAudits = data.map(audit => {
-  let auditorName = 'Auditor';
-  try {
-    const notes = JSON.parse(audit.notes);
-    auditorName = notes.auditors || 'Auditor';
-  } catch (e) {
-    auditorName = 'Auditor';
-  }
+          let auditorName = 'Auditor';
+          try {
+            const notes = JSON.parse(audit.notes);
+            auditorName = notes.auditors || 'Auditor';
+          } catch (e) {
+            auditorName = 'Auditor';
+          }
 
-  return {
-    id: audit.id,
-    auditType: AUDIT_TYPE_MAP[audit.audit_type_id] || 'warehouse',
-    location: audit.team_name || 'Unknown',
-    auditor: auditorName,
-    date: audit.audit_date,
-    score: audit.total_score || 0,
-    maxScore: 100,
-    percentage: audit.percentage_score || 0,
-    status: audit.percentage_score >= 85 ? 'Excellent' : audit.percentage_score >= 70 ? 'Good' : audit.percentage_score >= 50 ? 'Needs Improvement' : 'Critical',
-    rawData: audit
-  };
-});
-
+          return {
+            id: audit.id,
+            auditType: AUDIT_TYPE_MAP[audit.audit_type_id] || 'warehouse',
+            location: audit.team_name || 'Unknown',
+            auditor: auditorName,
+            date: audit.audit_date,
+            score: audit.total_score || 0,
+            maxScore: 100,
+            percentage: audit.percentage_score || 0,
+            status: audit.percentage_score >= 85 ? 'Excellent' : audit.percentage_score >= 70 ? 'Good' : audit.percentage_score >= 50 ? 'Needs Improvement' : 'Critical',
+            rawData: audit
+          };
+        });
 
         setAudits(transformedAudits);
         setError(null);
@@ -83,15 +80,12 @@ const AuditHistory = () => {
   // Filter audits
   const filteredAudits = useMemo(() => {
     return audits.filter(audit => {
-      // Search filter
       const searchMatch = 
         audit.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
         audit.auditor.toLowerCase().includes(searchTerm.toLowerCase());
 
-      // Audit type filter
       const typeMatch = filterAuditType === 'All' || audit.auditType === filterAuditType;
 
-      // Date range filter
       let dateMatch = true;
       const auditDate = new Date(audit.date);
       const today = new Date();
@@ -136,7 +130,6 @@ const AuditHistory = () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Audits');
 
-    // Set column widths
     worksheet['!cols'] = [
       { wch: 12 },
       { wch: 15 },
@@ -154,7 +147,6 @@ const AuditHistory = () => {
   const handleDeleteAudit = async (auditId) => {
     if (window.confirm('Are you sure you want to delete this audit?')) {
       try {
-        // TODO: Implement delete in auditService
         console.log('Deleting audit:', auditId);
         alert('Delete functionality coming soon');
       } catch (err) {
@@ -163,93 +155,111 @@ const AuditHistory = () => {
     }
   };
 
-  // Styles
+  // ==================== STYLES ====================
+
   const containerStyle = {
-    padding: '30px',
-    background: '#f5f5f5',
+    padding: '24px',
+    background: '#F5F7FA',
     minHeight: '100vh'
   };
 
   const headerStyle = {
-    marginBottom: '30px'
+    marginBottom: '24px'
   };
 
   const titleStyle = {
-    fontSize: '32px',
+    fontSize: '20px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '10px'
+    color: '#2C3E50',
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
+  };
+
+  const subtitleStyle = {
+    color: '#999',
+    fontSize: '13px',
+    fontWeight: '500'
   };
 
   const filterContainerStyle = {
     background: 'white',
     padding: '20px',
     borderRadius: '8px',
-    marginBottom: '30px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+    marginBottom: '24px',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+    border: '1px solid #E8EAED'
   };
 
   const filterRowStyle = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '15px',
-    marginBottom: '15px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
+    marginBottom: '12px'
   };
 
   const filterGroupStyle = {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px'
+    gap: '6px'
   };
 
   const labelStyle = {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#333'
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#2C3E50',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const inputStyle = {
-    padding: '10px 12px',
-    border: '1px solid #ddd',
+    padding: '8px 12px',
+    border: '1px solid #E8EAED',
     borderRadius: '6px',
-    fontSize: '14px',
-    fontFamily: 'inherit'
+    fontSize: '13px',
+    fontFamily: 'inherit',
+    color: '#2C3E50',
+    transition: 'all 0.3s ease'
   };
 
   const buttonGroupStyle = {
     display: 'flex',
-    gap: '10px',
-    marginTop: '15px'
+    gap: '8px',
+    marginTop: '12px',
+    flexWrap: 'wrap'
   };
 
   const buttonStyle = {
-    padding: '10px 20px',
+    padding: '8px 16px',
     border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '600',
-    transition: 'all 0.3s'
+    fontSize: '12px',
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const primaryButtonStyle = {
     ...buttonStyle,
-    background: '#1E40AF',
+    background: '#2C3E50',
     color: 'white'
   };
 
   const secondaryButtonStyle = {
     ...buttonStyle,
-    background: '#6b7280',
-    color: 'white'
+    background: '#E8EAED',
+    color: '#2C3E50'
   };
 
   const tableContainerStyle = {
     background: 'white',
     borderRadius: '8px',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
     overflow: 'hidden',
-    marginBottom: '30px'
+    marginBottom: '24px',
+    border: '1px solid #E8EAED'
   };
 
   const tableStyle = {
@@ -258,55 +268,63 @@ const AuditHistory = () => {
   };
 
   const theadStyle = {
-    background: '#1E40AF',
-    color: 'white'
+    background: '#F5F7FA',
+    borderBottom: '2px solid #E8EAED'
   };
 
   const thStyle = {
-    padding: '15px',
+    padding: '12px',
     textAlign: 'left',
-    fontSize: '14px',
-    fontWeight: '600',
+    fontSize: '11px',
+    fontWeight: '700',
     cursor: 'pointer',
-    userSelect: 'none'
+    userSelect: 'none',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    color: '#2C3E50'
   };
 
   const tdStyle = {
-    padding: '15px',
-    borderBottom: '1px solid #e5e7eb',
-    fontSize: '14px'
+    padding: '12px',
+    borderBottom: '1px solid #E8EAED',
+    fontSize: '13px',
+    color: '#2C3E50'
   };
 
   const statusBadgeStyle = (status) => ({
     display: 'inline-block',
-    padding: '6px 12px',
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: '600',
-    background: status === 'Excellent' ? '#D1FAE5' : status === 'Good' ? '#DBEAFE' : status === 'Needs Improvement' ? '#FEF3C7' : '#FEE2E2',
-    color: status === 'Excellent' ? '#065F46' : status === 'Good' ? '#1E40AF' : status === 'Needs Improvement' ? '#92400E' : '#991B1B'
+    padding: '4px 10px',
+    borderRadius: '12px',
+    fontSize: '10px',
+    fontWeight: '700',
+    background: status === 'Excellent' ? 'rgba(39, 174, 96, 0.1)' : status === 'Good' ? 'rgba(52, 152, 219, 0.1)' : status === 'Needs Improvement' ? 'rgba(230, 126, 34, 0.1)' : 'rgba(231, 76, 60, 0.1)',
+    color: status === 'Excellent' ? '#27AE60' : status === 'Good' ? '#3498DB' : status === 'Needs Improvement' ? '#E67E22' : '#E74C3C',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   });
 
   const actionButtonStyle = {
-    padding: '6px 12px',
-    margin: '0 4px',
+    padding: '4px 10px',
+    margin: '0 3px',
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '12px',
-    fontWeight: '600',
-    transition: 'all 0.3s'
+    fontSize: '11px',
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const viewButtonStyle = {
     ...actionButtonStyle,
-    background: '#3B82F6',
+    background: '#3498DB',
     color: 'white'
   };
 
   const deleteButtonStyle = {
     ...actionButtonStyle,
-    background: '#EF4444',
+    background: '#E74C3C',
     color: 'white'
   };
 
@@ -314,17 +332,19 @@ const AuditHistory = () => {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: '10px',
-    marginTop: '20px'
+    gap: '8px',
+    marginTop: '16px'
   };
 
   const paginationButtonStyle = {
-    padding: '8px 12px',
-    border: '1px solid #ddd',
+    padding: '6px 12px',
+    border: '1px solid #E8EAED',
     borderRadius: '4px',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: '12px',
     background: 'white',
+    color: '#2C3E50',
+    fontWeight: '700',
     transition: 'all 0.3s'
   };
 
@@ -344,54 +364,72 @@ const AuditHistory = () => {
   const modalStyle = {
     background: 'white',
     borderRadius: '8px',
-    padding: '30px',
-    maxWidth: '600px',
+    padding: '24px',
+    maxWidth: '500px',
     maxHeight: '80vh',
     overflowY: 'auto',
-    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)'
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    border: '1px solid #E8EAED'
   };
 
   const modalHeaderStyle = {
-    fontSize: '24px',
+    fontSize: '16px',
     fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: '20px',
-    paddingBottom: '15px',
-    borderBottom: '2px solid #e5e7eb'
+    color: '#2C3E50',
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #E8EAED',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const modalItemStyle = {
-    marginBottom: '15px',
-    paddingBottom: '15px',
-    borderBottom: '1px solid #e5e7eb'
+    marginBottom: '12px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #E8EAED'
   };
 
   const modalLabelStyle = {
-    fontSize: '12px',
-    color: '#666',
-    fontWeight: '600',
-    marginBottom: '5px'
+    fontSize: '11px',
+    color: '#999',
+    fontWeight: '700',
+    marginBottom: '4px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   const modalValueStyle = {
-    fontSize: '16px',
-    color: '#333',
-    fontWeight: '500'
+    fontSize: '14px',
+    color: '#2C3E50',
+    fontWeight: '600'
   };
 
   const loadingStyle = {
     textAlign: 'center',
-    padding: '40px',
-    fontSize: '18px',
-    color: '#666'
+    padding: '60px 40px',
+    fontSize: '16px',
+    color: '#999',
+    fontWeight: '600'
   };
 
   const errorStyle = {
-    background: '#FEE2E2',
-    color: '#991B1B',
-    padding: '15px',
-    borderRadius: '8px',
-    marginBottom: '20px'
+    background: 'rgba(231, 76, 60, 0.1)',
+    color: '#E74C3C',
+    padding: '12px',
+    borderRadius: '6px',
+    marginBottom: '20px',
+    borderLeft: '3px solid #E74C3C',
+    fontWeight: '600',
+    fontSize: '13px'
+  };
+
+  const filterTitleStyle = {
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#2C3E50',
+    marginBottom: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px'
   };
 
   if (loading) {
@@ -403,7 +441,7 @@ const AuditHistory = () => {
       {/* HEADER */}
       <div style={headerStyle}>
         <h1 style={titleStyle}>Audit History</h1>
-        <p style={{ color: '#666', fontSize: '16px' }}>View and manage all audits</p>
+        <p style={subtitleStyle}>View and manage all audits</p>
       </div>
 
       {/* ERROR MESSAGE */}
@@ -411,14 +449,14 @@ const AuditHistory = () => {
 
       {/* FILTERS */}
       <div style={filterContainerStyle}>
-        <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#333', marginBottom: '15px' }}>Filters</h3>
+        <h3 style={filterTitleStyle}>Filters</h3>
 
         <div style={filterRowStyle}>
           <div style={filterGroupStyle}>
-            <label style={labelStyle}>Search (Location/Auditor)</label>
+            <label style={labelStyle}>Search</label>
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Location or auditor..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -429,7 +467,7 @@ const AuditHistory = () => {
           </div>
 
           <div style={filterGroupStyle}>
-            <label style={labelStyle}>Audit Type</label>
+            <label style={labelStyle}>Type</label>
             <select
               value={filterAuditType}
               onChange={(e) => {
@@ -438,7 +476,7 @@ const AuditHistory = () => {
               }}
               style={inputStyle}
             >
-              <option value="All">All Types</option>
+              <option value="All">All</option>
               <option value="warehouse">Warehouse</option>
               <option value="shopfloor">Shopfloor</option>
               <option value="laboratory">Laboratory</option>
@@ -459,7 +497,7 @@ const AuditHistory = () => {
               <option value="all">All Time</option>
               <option value="7days">Last 7 Days</option>
               <option value="30days">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
         </div>
@@ -467,7 +505,7 @@ const AuditHistory = () => {
         {filterDateRange === 'custom' && (
           <div style={filterRowStyle}>
             <div style={filterGroupStyle}>
-              <label style={labelStyle}>From Date</label>
+              <label style={labelStyle}>From</label>
               <input
                 type="date"
                 value={filterFromDate}
@@ -480,7 +518,7 @@ const AuditHistory = () => {
             </div>
 
             <div style={filterGroupStyle}>
-              <label style={labelStyle}>To Date</label>
+              <label style={labelStyle}>To</label>
               <input
                 type="date"
                 value={filterToDate}
@@ -506,14 +544,14 @@ const AuditHistory = () => {
             }}
             style={secondaryButtonStyle}
           >
-            Clear Filters
+            Clear
           </button>
 
           <button
             onClick={exportToExcel}
             style={primaryButtonStyle}
           >
-            📥 Export to Excel
+            Export
           </button>
         </div>
       </div>
@@ -524,7 +562,7 @@ const AuditHistory = () => {
           <thead style={theadStyle}>
             <tr>
               <th style={thStyle}>Date</th>
-              <th style={thStyle}>Audit Type</th>
+              <th style={thStyle}>Type</th>
               <th style={thStyle}>Location</th>
               <th style={thStyle}>Auditor</th>
               <th style={thStyle}>Score</th>
@@ -532,6 +570,7 @@ const AuditHistory = () => {
               <th style={thStyle}>Actions</th>
             </tr>
           </thead>
+
           <tbody>
             {paginatedAudits.map((audit, index) => (
               <tr key={audit.id || index}>
@@ -539,9 +578,7 @@ const AuditHistory = () => {
                 <td style={tdStyle}>{auditTypeLabels[audit.auditType]}</td>
                 <td style={tdStyle}>{audit.location}</td>
                 <td style={tdStyle}>{audit.auditor}</td>
-                <td style={tdStyle}>
-                  <strong>{audit.percentage}%</strong>
-                </td>
+                <td style={{...tdStyle, fontWeight: '700', color: '#FFD54F'}}>{audit.percentage}%</td>
                 <td style={tdStyle}>
                   <span style={statusBadgeStyle(audit.status)}>{audit.status}</span>
                 </td>
@@ -552,16 +589,16 @@ const AuditHistory = () => {
                       setShowDetails(true);
                     }}
                     style={viewButtonStyle}
-                    onMouseEnter={(e) => e.target.style.background = '#2563EB'}
-                    onMouseLeave={(e) => e.target.style.background = '#3B82F6'}
+                    onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                    onMouseLeave={(e) => e.target.style.opacity = '1'}
                   >
                     View
                   </button>
                   <button
                     onClick={() => handleDeleteAudit(audit.id)}
                     style={deleteButtonStyle}
-                    onMouseEnter={(e) => e.target.style.background = '#DC2626'}
-                    onMouseLeave={(e) => e.target.style.background = '#EF4444'}
+                    onMouseEnter={(e) => e.target.style.opacity = '0.8'}
+                    onMouseLeave={(e) => e.target.style.opacity = '1'}
                   >
                     Delete
                   </button>
@@ -572,7 +609,7 @@ const AuditHistory = () => {
         </table>
 
         {filteredAudits.length === 0 && (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
+          <div style={{ padding: '30px', textAlign: 'center', color: '#999', fontSize: '13px' }}>
             No audits found
           </div>
         )}
@@ -586,11 +623,11 @@ const AuditHistory = () => {
             disabled={currentPage === 1}
             style={{ ...paginationButtonStyle, opacity: currentPage === 1 ? 0.5 : 1 }}
           >
-            ← Previous
+            Previous
           </button>
 
-          <span style={{ fontSize: '14px', fontWeight: '600' }}>
-            Page {currentPage} of {totalPages}
+          <span style={{ fontSize: '12px', fontWeight: '700', color: '#2C3E50' }}>
+            {currentPage} / {totalPages}
           </span>
 
           <button
@@ -598,96 +635,98 @@ const AuditHistory = () => {
             disabled={currentPage === totalPages}
             style={{ ...paginationButtonStyle, opacity: currentPage === totalPages ? 0.5 : 1 }}
           >
-            Next →
+            Next
           </button>
         </div>
       )}
-{/* DETAILS MODAL */}
-{showDetails && selectedAudit && (
-  <div style={modalOverlayStyle} onClick={() => setShowDetails(false)}>
-    <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-      <div style={modalHeaderStyle}>
-        Audit Details & Comments
-      </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Date</div>
-        <div style={modalValueStyle}>{selectedAudit.date}</div>
-      </div>
+      {/* DETAILS MODAL */}
+      {showDetails && selectedAudit && (
+        <div style={modalOverlayStyle} onClick={() => setShowDetails(false)}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <div style={modalHeaderStyle}>
+              Audit Details
+            </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Audit Type</div>
-        <div style={modalValueStyle}>{auditTypeLabels[selectedAudit.auditType]}</div>
-      </div>
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Date</div>
+              <div style={modalValueStyle}>{selectedAudit.date}</div>
+            </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Location</div>
-        <div style={modalValueStyle}>{selectedAudit.location}</div>
-      </div>
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Type</div>
+              <div style={modalValueStyle}>{auditTypeLabels[selectedAudit.auditType]}</div>
+            </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Auditor</div>
-        <div style={modalValueStyle}>{selectedAudit.auditor}</div>
-      </div>
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Location</div>
+              <div style={modalValueStyle}>{selectedAudit.location}</div>
+            </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Score</div>
-        <div style={modalValueStyle}>{selectedAudit.percentage}% ({selectedAudit.score}/{selectedAudit.maxScore})</div>
-      </div>
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Auditor</div>
+              <div style={modalValueStyle}>{selectedAudit.auditor}</div>
+            </div>
 
-      <div style={modalItemStyle}>
-        <div style={modalLabelStyle}>Status</div>
-        <span style={statusBadgeStyle(selectedAudit.status)}>{selectedAudit.status}</span>
-      </div>
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Score</div>
+              <div style={modalValueStyle}>{selectedAudit.percentage}% ({selectedAudit.score}/{selectedAudit.maxScore})</div>
+            </div>
 
-      {/* COMMENTS SECTION */}
-      {selectedAudit.rawData && selectedAudit.rawData.notes && (
-        <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '2px solid #e5e7eb' }}>
-          <h4 style={{ fontSize: '16px', fontWeight: '700', color: '#1E40AF', marginBottom: '15px' }}>
-            Section Comments
-          </h4>
-          {(() => {
-            try {
-              const notes = JSON.parse(selectedAudit.rawData.notes);
-              const sections = notes.sections || {};
-              const hasComments = Object.values(sections).some(section => section.comments);
+            <div style={modalItemStyle}>
+              <div style={modalLabelStyle}>Status</div>
+              <span style={statusBadgeStyle(selectedAudit.status)}>{selectedAudit.status}</span>
+            </div>
 
-              if (!hasComments) {
-                return <p style={{ color: '#999', fontSize: '14px' }}>No comments recorded</p>;
-              }
+            {/* COMMENTS SECTION */}
+            {selectedAudit.rawData && selectedAudit.rawData.notes && (
+              <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #E8EAED' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: '700', color: '#2C3E50', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  Comments
+                </h4>
 
-              return Object.entries(sections).map(([sectionCode, sectionData]) => {
-                if (!sectionData.comments) return null;
+                {(() => {
+                  try {
+                    const notes = JSON.parse(selectedAudit.rawData.notes);
+                    const sections = notes.sections || {};
+                    const hasComments = Object.values(sections).some(section => section.comments);
 
-                return (
-                  <div key={sectionCode} style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px solid #e5e7eb' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '600', color: '#1E40AF', marginBottom: '8px' }}>
-                      Section {sectionCode.toUpperCase()}
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#333', lineHeight: '1.5', background: '#f9fafb', padding: '10px', borderRadius: '4px' }}>
-                      {sectionData.comments}
-                    </div>
-                  </div>
-                );
-              });
-            } catch (e) {
-              return <p style={{ color: '#999', fontSize: '14px' }}>Unable to load comments</p>;
-            }
-          })()}
+                    if (!hasComments) {
+                      return <p style={{ color: '#999', fontSize: '12px' }}>No comments</p>;
+                    }
+
+                    return Object.entries(sections).map(([sectionCode, sectionData]) => {
+                      if (!sectionData.comments) return null;
+
+                      return (
+                        <div key={sectionCode} style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid #E8EAED' }}>
+                          <div style={{ fontSize: '12px', fontWeight: '700', color: '#2C3E50', marginBottom: '6px', textTransform: 'uppercase' }}>
+                            Section {sectionCode}
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#2C3E50', lineHeight: '1.4', background: '#F5F7FA', padding: '8px', borderRadius: '4px' }}>
+                            {sectionData.comments}
+                          </div>
+                        </div>
+                      );
+                    });
+                  } catch (e) {
+                    return <p style={{ color: '#999', fontSize: '12px' }}>Unable to load comments</p>;
+                  }
+                })()}
+              </div>
+            )}
+
+            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #E8EAED' }}>
+              <button
+                onClick={() => setShowDetails(false)}
+                style={primaryButtonStyle}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '2px solid #e5e7eb' }}>
-        <button
-          onClick={() => setShowDetails(false)}
-          style={primaryButtonStyle}
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-)}
     </div>
   );
 };
