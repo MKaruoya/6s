@@ -211,6 +211,7 @@ const WarehouseAuditForm = () => {
 
     try {
       const sixSScores = calculate6SScores();
+
       const auditPayload = {
         auditType: 'warehouse',
         location: formData.gemba,
@@ -226,10 +227,10 @@ const WarehouseAuditForm = () => {
 
       const response = await saveAudit(auditPayload);
       console.log('Warehouse audit saved successfully:', auditPayload);
-      
+
       // Store audit ID for action items
       setAuditId(response.audit_id || response.id);
-      
+
       setLoading(false);
       setShowActionItemsModal(true);
     } catch (err) {
@@ -336,13 +337,11 @@ const WarehouseAuditForm = () => {
             <h2>CAPWELL INDUSTRIES LIMITED</h2>
             <p>"The Home of Wholesome Brands"</p>
           </div>
-
           <div className="form-reference">
             <p><strong>Document:</strong> {auditData.code}</p>
             <p><strong>Revision:</strong> {auditData.revision}</p>
           </div>
         </div>
-
         <h1 className="form-title">{auditData.name}</h1>
         <p className="form-scope">Scope: {auditData.scope}</p>
         <p className="scoring-criteria">Scoring Criteria: {auditData.scoringCriteria}</p>
@@ -377,7 +376,6 @@ const WarehouseAuditForm = () => {
                   ))}
                 </select>
               </div>
-
               <div className="form-group">
                 <label>TEAM NAME *</label>
                 <input 
@@ -389,7 +387,6 @@ const WarehouseAuditForm = () => {
                   required
                 />
               </div>
-
               <div className="form-group">
                 <label>AUDITOR(S) *</label>
                 <input 
@@ -401,7 +398,6 @@ const WarehouseAuditForm = () => {
                   required
                 />
               </div>
-
               <div className="form-group">
                 <label>DATE *</label>
                 <input 
@@ -472,17 +468,38 @@ const WarehouseAuditForm = () => {
                         )}
                       </div>
 
-                      {/* PHOTO UPLOAD */}
+                      {/* PHOTO UPLOAD - BOTH UPLOAD AND CAMERA */}
                       <div className="checkpoint-photo">
-                        <label 
-                          htmlFor={`photo-${section.code}-${idx}`} 
-                          className="photo-label"
-                          style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
-                        >
-                          {photoLoading ? '⏳ Uploading...' : '📷 Photo'}
-                        </label>
+                        <div className="photo-buttons">
+                          <label 
+                            htmlFor={`photo-upload-${section.code}-${idx}`} 
+                            className="photo-label"
+                            style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
+                            title="Upload photo from device"
+                          >
+                            {photoLoading ? '⏳ Uploading...' : '📁 Upload'}
+                          </label>
+                          <label 
+                            htmlFor={`photo-camera-${section.code}-${idx}`} 
+                            className="photo-label camera-label"
+                            style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
+                            title="Take photo with camera"
+                          >
+                            {photoLoading ? '⏳ Uploading...' : '📷 Camera'}
+                          </label>
+                        </div>
+                        
                         <input
-                          id={`photo-${section.code}-${idx}`}
+                          id={`photo-upload-${section.code}-${idx}`}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handlePhotoUpload(section.code, idx, e.target.files[0])}
+                          disabled={photoLoading}
+                          style={{ display: 'none' }}
+                        />
+                        
+                        <input
+                          id={`photo-camera-${section.code}-${idx}`}
                           type="file"
                           accept="image/*"
                           capture="environment"
@@ -490,6 +507,7 @@ const WarehouseAuditForm = () => {
                           disabled={photoLoading}
                           style={{ display: 'none' }}
                         />
+                        
                         {formData.sections[section.code]?.checkpoints?.[`photo_${idx}`] && (
                           <div className="photo-preview">
                             <img 
@@ -636,7 +654,6 @@ const WarehouseAuditForm = () => {
             >
               ← Previous
             </button>
-
             <div className="step-indicator">
               {[1, 2, 3, 4, 5].map(step => (
                 <div 
@@ -646,7 +663,6 @@ const WarehouseAuditForm = () => {
                 />
               ))}
             </div>
-
             {currentStep < 5 ? (
               <button 
                 type="button" 

@@ -990,3 +990,37 @@
     gap: 8px;
   }
 }
+/* Photo Upload Buttons */
+.photo-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.photo-buttons .photo-label {
+  flex: 1;
+  max-width: 90px;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  background: #FFD54F !important;
+  border-color: #FFD54F !important;
+  color: #2C3E50 !important;
+}
+
+.photo-buttons .photo-label:hover {
+  background: #FFC107 !important;
+  border-color: #FFC107 !important;
+}
+
+.photo-label.camera-label {
+  background: #3498DB !important;
+  border-color: #3498DB !important;
+  color: white !important;
+}
+
+.photo-label.camera-label:hover {
+  background: #2980B9 !important;
+  border-color: #2980B9 !important;
+}
