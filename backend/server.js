@@ -39,20 +39,22 @@ app.use('/api/action-items', actionItemRoutes);
 // ==================== SERVE FRONTEND ====================
 
 // Serve static files from frontend build
-app.use(express.static(path.join(__dirname, '../frontend/build')));
-
-// Serve index.html for root
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
-});
+const buildPath = path.join(__dirname, '../frontend/build');
+app.use(express.static(buildPath));
 
 // Catch-all for React Router - must be AFTER all API routes
-app.use((req, res) => {
+app.get('*', (req, res) => {
   // Don't serve index.html for API routes
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API endpoint not found' });
   }
-  res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
+  // Serve index.html for all other routes (React Router)
+  res.sendFile(path.join(buildPath, 'index.html'), (err) => {
+    if (err) {
+      console.error('Error serving index.html:', err);
+      res.status(500).json({ error: 'Could not serve application' });
+    }
+  });
 });
 
 // Error handling
