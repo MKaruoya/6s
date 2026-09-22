@@ -13,9 +13,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
 // ==================== LOGIN ====================
+
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    console.log('Login attempt for:', email);
 
     // Validate input
     if (!email || !password) {
@@ -28,12 +31,18 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user
+    console.log('Querying database for user:', email);
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log('Query result:', result.rows.length, 'rows found');
+
     const user = result.rows[0];
 
     if (!user) {
+      console.log('User not found:', email);
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    console.log('User found:', user.email, 'Active:', user.is_active);
 
     if (!user.is_active) {
       return res.status(401).json({ message: 'Account is inactive' });
@@ -45,13 +54,15 @@ router.post('/login', async (req, res) => {
     }
 
     // Check password
+    console.log('Checking password...');
     const validPassword = user.password ? await bcrypt.compare(password, user.password) : false;
     
+    console.log('Password valid:', validPassword);
+
     if (!validPassword) {
       // Increment login attempts
       const attempts = (user.login_attempts || 0) + 1;
       let lockedUntil = null;
-
       if (attempts >= 5) {
         lockedUntil = new Date(Date.now() + 30 * 60 * 1000); // Lock for 30 minutes
       }
@@ -93,6 +104,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: JWT_EXPIRE }
     );
 
+    console.log('Login successful for:', email);
+
     res.json({
       token,
       user: {
@@ -104,9 +117,11 @@ router.post('/login', async (req, res) => {
         location_id: user.location_id
       }
     });
+
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
