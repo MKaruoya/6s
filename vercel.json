@@ -1,53 +1,7 @@
 {
-    
-"experimentalServices"
-:
- 
-{
-        
-"frontend"
-:
- 
-{
-            
-"entrypoint"
-:
- 
-"frontend"
-,
-            
-"routePrefix"
-:
- 
-"/"
-,
-            
-"framework"
-:
- 
-"create-react-app"
-        
+  "buildCommand": "cd frontend && CI=false npm run build",
+  "outputDirectory": "frontend/build",
+  "env": {
+    "REACT_APP_API_URL": "https://sixs-audit-backend.onrender.com/api"
+  }
 }
-,
-        
-"backend"
-:
- 
-{
-            
-"entrypoint"
-:
- 
-"backend"
-,
-            
-"routePrefix"
-:
- 
-"/_/backend"
-        
-}
-    
-}
-}
-
