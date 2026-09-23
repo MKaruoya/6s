@@ -3,7 +3,6 @@ import API_URL from '../config/api';
 // Default org and user IDs
 const DEFAULT_ORG_ID = '6a7d9fcb-d111-4e5b-a437-0a5f17aae6c7';
 const DEFAULT_USER_ID = '0463b4f0-a094-4cff-9208-96d7645ed386'; // Mercy Karuoya
-const DEFAULT_LOCATION_ID = '29bd28cb-e261-47c0-8073-d70e2289b53d'; // Warehouse - Raw Materials
 
 // Audit type IDs mapped by audit type
 const AUDIT_TYPE_MAP = {
@@ -32,13 +31,13 @@ export const saveAudit = async (auditData) => {
     };
 
     // Prepare the audit record
+    // DO NOT include location_id - let backend look it up from team_name
     const auditRecord = {
       org_id: DEFAULT_ORG_ID,
       audit_type_id: auditTypeId,
-      location_id: DEFAULT_LOCATION_ID,
+      team_name: location,  // Backend will look up location_id from this
       audit_date: auditData.auditDate || auditData.auditPeriodStart || new Date().toISOString().split('T')[0],
       auditor_id: DEFAULT_USER_ID,
-      team_name: location,
       status: 'submitted',
       total_score: auditData.totalScore || 0,
       percentage_score: auditData.percentage || 0,
@@ -46,11 +45,12 @@ export const saveAudit = async (auditData) => {
       submitted_at: new Date().toISOString()
     };
 
-    console.log('Saving audit record:', auditRecord);
+    console.log('📝 Saving audit record:', auditRecord);
     console.log('6S Scores being saved:', auditData.sixSScores);
 
     // Call backend API using API_URL config
     const token = localStorage.getItem('token');
+
     const response = await fetch(`${API_URL}/audits`, {
       method: 'POST',
       headers: {
@@ -66,11 +66,12 @@ export const saveAudit = async (auditData) => {
     }
 
     const data = await response.json();
-    console.log('Audit saved successfully:', data);
+    console.log('✅ Audit saved successfully:', data);
+
     return data;
 
   } catch (err) {
-    console.error('Save audit error:', err);
+    console.error('❌ Save audit error:', err);
     console.error('Error message:', err.message);
     throw err;
   }
@@ -80,6 +81,7 @@ export const saveAudit = async (auditData) => {
 export const getAudits = async () => {
   try {
     const token = localStorage.getItem('token');
+
     const response = await fetch(`${API_URL}/audits`, {
       headers: {
         'Authorization': `Bearer ${token}`
@@ -103,6 +105,7 @@ export const getAudits = async () => {
 export const getAuditsByLocation = async (location) => {
   try {
     const token = localStorage.getItem('token');
+
     const response = await fetch(`${API_URL}/audits?teamName=${encodeURIComponent(location)}`, {
       headers: {
         'Authorization': `Bearer ${token}`
@@ -127,6 +130,7 @@ export const getAuditsByType = async (auditType) => {
   try {
     const auditTypeId = AUDIT_TYPE_MAP[auditType];
     const token = localStorage.getItem('token');
+
     const response = await fetch(`${API_URL}/audits?auditTypeId=${auditTypeId}`, {
       headers: {
         'Authorization': `Bearer ${token}`
@@ -150,6 +154,7 @@ export const getAuditsByType = async (auditType) => {
 export const getAuditById = async (auditId) => {
   try {
     const token = localStorage.getItem('token');
+
     const response = await fetch(`${API_URL}/audits/${auditId}`, {
       headers: {
         'Authorization': `Bearer ${token}`
