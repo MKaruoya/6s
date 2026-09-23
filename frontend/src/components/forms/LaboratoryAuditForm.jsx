@@ -3,7 +3,6 @@ import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
 import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
-import PhotoUploadComponent from '../PhotoUpload/PhotoUploadComponent';
 import '../../styles/AuditForm.css';
 
 const LaboratoryAuditForm = () => {
@@ -13,8 +12,6 @@ const LaboratoryAuditForm = () => {
   const [success, setSuccess] = useState(false);
   const [showActionItemsModal, setShowActionItemsModal] = useState(false);
   const [auditId, setAuditId] = useState(null);
-  const [photoLoading, setPhotoLoading] = useState(false);
-  const [photoError, setPhotoError] = useState(null);
 
   const auditData = auditCheckpoints.laboratory;
 
@@ -74,9 +71,9 @@ const LaboratoryAuditForm = () => {
     const checkpointCount = sectionData?.criteria?.length || sectionData?.checkpoints?.length || 5;
     const pointsPerCheckpoint = maxPoints / checkpointCount;
     let score = 0;
-    Object.entries(section.checkpoints).forEach(([key, value]) => {
-      if (!key.startsWith('photo_') && value !== undefined) {
-        score += calculateCheckpointScore(value, sectionCode, pointsPerCheckpoint);
+    Object.values(section.checkpoints).forEach(abnormalities => {
+      if (abnormalities !== undefined) {
+        score += calculateCheckpointScore(abnormalities, sectionCode, pointsPerCheckpoint);
       }
     });
     return Math.round(score * 100) / 100;
@@ -145,38 +142,6 @@ const LaboratoryAuditForm = () => {
     }));
   };
 
-  const handlePhotoUpload = async (sectionCode, checkpointIndex, base64) => {
-    setFormData(prev => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [sectionCode]: {
-          ...prev.sections[sectionCode],
-          checkpoints: {
-            ...prev.sections[sectionCode].checkpoints,
-            [`photo_${checkpointIndex}`]: base64
-          }
-        }
-      }
-    }));
-  };
-
-  const handleRemovePhoto = (sectionCode, checkpointIndex) => {
-    setFormData(prev => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [sectionCode]: {
-          ...prev.sections[sectionCode],
-          checkpoints: {
-            ...prev.sections[sectionCode].checkpoints,
-            [`photo_${checkpointIndex}`]: null
-          }
-        }
-      }
-    }));
-  };
-
   const handleNext = () => {
     if (currentStep < 5) setCurrentStep(currentStep + 1);
   };
@@ -224,6 +189,11 @@ const LaboratoryAuditForm = () => {
     setSuccess(true);
   };
 
+  const handleActionItemsCancel = () => {
+    setShowActionItemsModal(false);
+    setCurrentStep(5);
+  };
+
   const handleNewAudit = () => {
     setCurrentStep(1);
     setFormData({
@@ -234,7 +204,6 @@ const LaboratoryAuditForm = () => {
     });
     setSuccess(false);
     setAuditId(null);
-    setPhotoError(null);
   };
 
   // STYLES
@@ -323,7 +292,6 @@ const LaboratoryAuditForm = () => {
 
       {/* ALERTS */}
       {error && <div className="alert alert-error">Error: {error}</div>}
-      {photoError && <div className="alert alert-error">Photo Error: {photoError}</div>}
 
       {/* FORM CONTENT */}
       <form onSubmit={handleSubmit} className="audit-form">
@@ -428,18 +396,6 @@ const LaboratoryAuditForm = () => {
                           </span>
                         )}
                       </div>
-
-                      {/* PHOTO UPLOAD */}
-                      <PhotoUploadComponent
-                        sectionCode={section.code}
-                        checkpointIndex={idx}
-                        onPhotoUpload={handlePhotoUpload}
-                        onPhotoRemove={handleRemovePhoto}
-                        photoData={formData.sections[section.code]?.checkpoints?.[`photo_${idx}`]}
-                        photoLoading={photoLoading}
-                        setPhotoError={setPhotoError}
-                        setPhotoLoading={setPhotoLoading}
-                      />
                     </div>
                   ))}
                 </div>
@@ -507,6 +463,18 @@ const LaboratoryAuditForm = () => {
                 {calculatePercentage() >= 50 && calculatePercentage() < 70 && <span className="status needs-improvement">Needs Improvement</span>}
                 {calculatePercentage() < 50 && <span className="status critical">Critical</span>}
               </div>
+            </div>
+
+            <div className="review-info" style={{
+              background: '#E3F2FD',
+              border: '1px solid #90CAF9',
+              borderRadius: '6px',
+              padding: '12px',
+              marginTop: '20px',
+              fontSize: '13px',
+              color: '#1565C0'
+            }}>
+              ℹ️ After submitting, you'll be able to add action items with photos before final confirmation.
             </div>
           </div>
         )}
@@ -580,15 +548,12 @@ const LaboratoryAuditForm = () => {
 
       {/* ACTION ITEMS MODAL */}
       {showActionItemsModal && auditId && (
-        <div style={modalOverlayStyle} onClick={() => setShowActionItemsModal(false)}>
+        <div style={modalOverlayStyle} onClick={() => handleActionItemsCancel()}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <CreateActionItemsFromAudit
               auditId={auditId}
               auditLocation={formData.gemba}
-              onClose={() => {
-                setShowActionItemsModal(false);
-                setSuccess(true);
-              }}
+              onClose={handleActionItemsCancel}
               onSuccess={handleActionItemsSuccess}
             />
           </div>
