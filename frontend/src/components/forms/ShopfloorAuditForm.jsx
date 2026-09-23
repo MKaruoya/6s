@@ -3,7 +3,7 @@ import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
 import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
-import PhotoUploadComponent from './PhotoUpload/PhotoUploadComponent';
+import PhotoUploadComponent from '../PhotoUpload/PhotoUploadComponent';
 import '../../styles/AuditForm.css';
 
 const ShopfloorAuditForm = () => {
