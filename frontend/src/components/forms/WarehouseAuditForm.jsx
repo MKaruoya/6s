@@ -3,7 +3,6 @@ import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
 import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
-import { compressAndConvertToBase64, validateImage } from '../../utils/imageUtils';
 import '../../styles/AuditForm.css';
 
 const WarehouseAuditForm = () => {
@@ -13,8 +12,6 @@ const WarehouseAuditForm = () => {
   const [success, setSuccess] = useState(false);
   const [showActionItemsModal, setShowActionItemsModal] = useState(false);
   const [auditId, setAuditId] = useState(null);
-  const [photoLoading, setPhotoLoading] = useState(false);
-  const [photoError, setPhotoError] = useState(null);
 
   const auditData = auditCheckpoints.warehouse;
 
@@ -58,9 +55,9 @@ const WarehouseAuditForm = () => {
     const checkpointCount = sectionData?.checkpoints?.length || 5;
     const pointsPerCheckpoint = maxPoints / checkpointCount;
     let score = 0;
-    Object.entries(section.checkpoints).forEach(([key, value]) => {
-      if (!key.startsWith('photo_') && value !== undefined) {
-        score += calculateCheckpointScore(value, pointsPerCheckpoint);
+    Object.values(section.checkpoints).forEach(abnormalities => {
+      if (abnormalities !== undefined) {
+        score += calculateCheckpointScore(abnormalities, pointsPerCheckpoint);
       }
     });
     return Math.round(score * 100) / 100;
@@ -128,55 +125,6 @@ const WarehouseAuditForm = () => {
     }));
   };
 
-  const handlePhotoUpload = async (sectionCode, checkpointIndex, file) => {
-    if (!file) return;
-    try {
-      setPhotoError(null);
-      setPhotoLoading(true);
-      const validation = validateImage(file);
-      if (!validation.valid) {
-        setPhotoError(validation.error);
-        setPhotoLoading(false);
-        return;
-      }
-      const base64 = await compressAndConvertToBase64(file, 0.5);
-      setFormData(prev => ({
-        ...prev,
-        sections: {
-          ...prev.sections,
-          [sectionCode]: {
-            ...prev.sections[sectionCode],
-            checkpoints: {
-              ...prev.sections[sectionCode].checkpoints,
-              [`photo_${checkpointIndex}`]: base64
-            }
-          }
-        }
-      }));
-      setPhotoLoading(false);
-    } catch (error) {
-      console.error('Error uploading photo:', error);
-      setPhotoError(error.message || 'Failed to upload photo');
-      setPhotoLoading(false);
-    }
-  };
-
-  const handleRemovePhoto = (sectionCode, checkpointIndex) => {
-    setFormData(prev => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [sectionCode]: {
-          ...prev.sections[sectionCode],
-          checkpoints: {
-            ...prev.sections[sectionCode].checkpoints,
-            [`photo_${checkpointIndex}`]: null
-          }
-        }
-      }
-    }));
-  };
-
   const handleNext = () => {
     if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
@@ -232,9 +180,8 @@ const WarehouseAuditForm = () => {
   };
 
   const handleActionItemsCancel = () => {
-    // Allow user to go back to review or close
     setShowActionItemsModal(false);
-    setCurrentStep(5); // Go back to review
+    setCurrentStep(5);
   };
 
   const handleNewAudit = () => {
@@ -248,7 +195,6 @@ const WarehouseAuditForm = () => {
     });
     setSuccess(false);
     setAuditId(null);
-    setPhotoError(null);
   };
 
   // STYLES
@@ -339,7 +285,6 @@ const WarehouseAuditForm = () => {
 
       {/* ALERTS */}
       {error && <div className="alert alert-error">Error: {error}</div>}
-      {photoError && <div className="alert alert-error">Photo Error: {photoError}</div>}
 
       {/* FORM CONTENT */}
       <form onSubmit={handleSubmit} className="audit-form">
@@ -453,75 +398,6 @@ const WarehouseAuditForm = () => {
                           </span>
                         )}
                       </div>
-                      <div className="checkpoint-photo">
-                        <div className="photo-buttons">
-                          <label 
-                            htmlFor={`photo-upload-${section.code}-${idx}`} 
-                            className="photo-label"
-                            style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
-                            title="Upload photo from device"
-                          >
-                            {photoLoading ? '⏳ Uploading...' : '📁 Upload'}
-                          </label>
-                          <label 
-                            htmlFor={`photo-camera-${section.code}-${idx}`} 
-                            className="photo-label camera-label"
-                            style={{ opacity: photoLoading ? 0.6 : 1, cursor: photoLoading ? 'not-allowed' : 'pointer' }}
-                            title="Take photo with camera"
-                          >
-                            {photoLoading ? '⏳ Uploading...' : '📷 Camera'}
-                          </label>
-                        </div>
-                        <input
-                          id={`photo-upload-${section.code}-${idx}`}
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handlePhotoUpload(section.code, idx, e.target.files[0])}
-                          disabled={photoLoading}
-                          style={{ display: 'none' }}
-                        />
-                        <input
-                          id={`photo-camera-${section.code}-${idx}`}
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          onChange={(e) => handlePhotoUpload(section.code, idx, e.target.files[0])}
-                          disabled={photoLoading}
-                          style={{ display: 'none' }}
-                        />
-                        {formData.sections[section.code]?.checkpoints?.[`photo_${idx}`] && (
-                          <div className="photo-preview">
-                            <img 
-                              src={formData.sections[section.code].checkpoints[`photo_${idx}`]} 
-                              alt="checkpoint"
-                              style={{ maxWidth: '80px', maxHeight: '80px', borderRadius: '4px' }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePhoto(section.code, idx)}
-                              style={{
-                                position: 'absolute',
-                                top: '-8px',
-                                right: '-8px',
-                                background: '#E74C3C',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '50%',
-                                width: '20px',
-                                height: '20px',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -604,7 +480,7 @@ const WarehouseAuditForm = () => {
               fontSize: '13px',
               color: '#1565C0'
             }}>
-              ℹ️ After submitting, you'll be able to add action items before final confirmation.
+              ℹ️ After submitting, you'll be able to add action items with photos before final confirmation.
             </div>
           </div>
         )}
