@@ -7,34 +7,55 @@ const calculations = require('../utils/calculations');
 // CREATE AUDIT
 router.post('/', async (req, res) => {
   try {
-    // If team_name is provided, look up the location_id from database
-    if (req.body.team_name && !req.body.location_id) {
-      console.log(`Looking up location for: ${req.body.team_name}`);
+    console.log('\n🔴 ===== CREATE AUDIT REQUEST =====');
+    console.log('Body keys:', Object.keys(req.body));
+    console.log('team_name:', req.body.team_name);
+    console.log('location_id:', req.body.location_id);
+    
+    // ALWAYS look up location_id from team_name, ignore any location_id sent
+    if (req.body.team_name) {
+      console.log(`\n🔍 LOOKING UP location for team_name: "${req.body.team_name}"`);
       
       const locationResult = await pool.query(
-        'SELECT location_id FROM locations WHERE location_name = $1 LIMIT 1',
+        'SELECT location_id, location_name FROM locations WHERE location_name = $1',
         [req.body.team_name]
       );
       
-      if (locationResult.rows.length === 0) {
-        console.error(`Location not found: ${req.body.team_name}`);
-        return res.status(400).json({ error: `Location not found: ${req.body.team_name}` });
-      }
+      console.log(`Query returned ${locationResult.rows.length} rows`);
       
-      req.body.location_id = locationResult.rows[0].location_id;
-      console.log(`Found location_id: ${req.body.location_id}`);
+      if (locationResult.rows.length > 0) {
+        req.body.location_id = locationResult.rows[0].location_id;
+        console.log(`✅ FOUND location_id: ${req.body.location_id}`);
+      } else {
+        console.log(`❌ Location NOT found for: "${req.body.team_name}"`);
+        
+        // Show all locations
+        const all = await pool.query('SELECT location_name FROM locations ORDER BY location_name');
+        console.log(`Available locations (${all.rows.length}):`, all.rows.map(r => r.location_name));
+        
+        return res.status(400).json({ 
+          error: `Location "${req.body.team_name}" not found in database`,
+          availableLocations: all.rows.map(r => r.location_name)
+        });
+      }
+    } else {
+      console.log('❌ NO team_name provided!');
+      return res.status(400).json({ error: 'team_name is required' });
     }
 
+    console.log('\n📝 Calling createAudit with location_id:', req.body.location_id);
     const result = await auditService.createAudit(req.body);
 
     if (!result.success) {
+      console.log('❌ createAudit failed:', result.error);
       return res.status(400).json({ error: result.error });
     }
 
+    console.log('✅ Audit created successfully:', result.data.audit_id);
     res.status(201).json(result.data);
 
   } catch (error) {
-    console.error('Create audit error:', error);
+    console.error('❌ ERROR:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

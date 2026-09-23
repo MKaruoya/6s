@@ -62,42 +62,62 @@ async function seedAll() {
     // ==================== CREATE TEAM ====================
     console.log('\n👥 Creating team...');
     
-    // Get first location for team
-    const firstLocResult = await pool.query('SELECT location_id FROM locations LIMIT 1');
-    const firstLocationId = firstLocResult.rows[0].location_id;
-
     const teamResult = await pool.query(
-      'INSERT INTO teams (org_id, location_id, team_name, created_at) VALUES ($1, $2, $3, NOW()) RETURNING team_id',
-      [orgId, firstLocationId, 'Kaizen Audit Team']
+      'INSERT INTO teams (org_id, team_name, created_at) VALUES ($1, $2, NOW()) RETURNING team_id',
+      [orgId, 'Kaizen Audit Team']
     );
     const teamId = teamResult.rows[0].team_id;
-    console.log(`  ✅ Created team: Kaizen Audit Team (ID: ${teamId})`);
+    console.log(`  ✅ Created team: Kaizen Audit Team`);
 
     // ==================== GET AUDIT TYPES ====================
     const auditTypesResult = await pool.query('SELECT audit_type_id, audit_type_name FROM audit_types');
-   const auditTypeMap = {};
-auditTypesResult.rows.forEach(row => {
-  auditTypeMap[row.audit_type_name.toLowerCase()] = row.audit_type_id;
-});
-console.log('Audit type map:', auditTypeMap);
-
+    const auditTypeMap = {};
+    auditTypesResult.rows.forEach(row => {
+      auditTypeMap[row.audit_type_name.toLowerCase()] = row.audit_type_id;
+    });
     console.log(`\n✅ Found ${auditTypesResult.rows.length} audit types`);
-    console.log('Audit types available:', Object.keys(auditTypeMap));
 
     // ==================== GET AUDITOR ====================
-    const auditorResult = await pool.query('SELECT user_id, name FROM users WHERE role = $1 LIMIT 1', ['auditor']);
+    const auditorResult = await pool.query('SELECT user_id FROM users WHERE role = $1 LIMIT 1', ['auditor']);
     if (auditorResult.rows.length === 0) {
       console.error('❌ No auditor user found.');
       process.exit(1);
     }
     const auditorId = auditorResult.rows[0].user_id;
-    const auditorName = auditorResult.rows[0].name || 'Auditor';
-    console.log(`✅ Using auditor: ${auditorName} (ID: ${auditorId})`);
+    console.log(`✅ Using auditor_id: ${auditorId}`);
 
     // ==================== GENERATE AUDITS ====================
     console.log('\n📊 Generating 12 months of audit data...\n');
 
     const generateScore = () => Math.floor(Math.random() * (95 - 50 + 1)) + 50;
+
+    const generateSectionScores = () => {
+      return {
+        '1S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
+        '2S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
+        '3S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
+        '4S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
+        '5S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
+        '6S': Math.floor(Math.random() * (100 - 40 + 1)) + 40
+      };
+    };
+
+    const generateSections = () => {
+      const sections = {};
+      ['1S', '2S', '3S', '4S', '5S', '6S'].forEach(code => {
+        sections[code] = {
+          checkpoints: {
+            0: Math.floor(Math.random() * 4),
+            1: Math.floor(Math.random() * 4),
+            2: Math.floor(Math.random() * 4),
+            3: Math.floor(Math.random() * 4),
+            4: Math.floor(Math.random() * 4)
+          },
+          comments: `Test audit for ${code}`
+        };
+      });
+      return sections;
+    };
 
     const startDate = new Date('2025-09-01');
     let auditCount = 0;
@@ -108,49 +128,18 @@ console.log('Audit type map:', auditTypeMap);
       const dateStr = auditDate.toISOString().split('T')[0];
 
       for (const [locName, locationId] of Object.entries(locationMap)) {
-       // Determine audit type based on location name
-let auditTypeId = auditTypeMap['shopfloor 6s audit']; // Default to shopfloor
-
-if (locName.includes('Warehouse') || locName.includes('Stores') || locName.includes('Returns')) {
-  auditTypeId = auditTypeMap['warehouse 6s audit'];
-  console.log(`  📦 ${locName} → Warehouse`);
-} else if (locName.includes('Lab') || locName.includes('RnD')) {
-  auditTypeId = auditTypeMap['laboratory 6s audit'];
-  console.log(`  🔬 ${locName} → Laboratory`);
-} else {
-  console.log(`  🏭 ${locName} → Shopfloor`);
-}
-
-if (!auditTypeId) {
-  console.error(`❌ Could not find audit type for location: ${locName}`);
-  continue;
-}
-
-
-
-        // Verify audit type was found
-        if (!auditTypeId) {
-          console.error(`❌ Could not find audit type for location: ${locName}`);
-          continue;
+        // Determine audit type
+        let auditTypeId = auditTypeMap['warehouse'];
+        if (locName.includes('Lab') || locName.includes('RnD')) {
+          auditTypeId = auditTypeMap['laboratory'];
+        } else if (!locName.includes('Warehouse') && !locName.includes('Stores') && !locName.includes('Returns')) {
+          auditTypeId = auditTypeMap['shopfloor'];
         }
 
         const score = generateScore();
         const percentage = score;
-
-        // Create notes object with audit details
-        const notesData = {
-          auditors: auditorName,
-          location: locName,
-          teamName: 'Kaizen Audit Team',
-          sixSScores: {
-            '1S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
-            '2S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
-            '3S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
-            '4S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
-            '5S': Math.floor(Math.random() * (100 - 40 + 1)) + 40,
-            '6S': Math.floor(Math.random() * (100 - 40 + 1)) + 40
-          }
-        };
+        const sixSScores = generateSectionScores();
+        const sections = generateSections();
 
         const query = `
           INSERT INTO audits (
@@ -163,11 +152,12 @@ if (!auditTypeId) {
             team_name,
             total_score,
             percentage_score,
+            sections,
+            six_s_scores,
             status,
-            notes,
             created_at,
             updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
         `;
 
         const values = [
@@ -177,11 +167,12 @@ if (!auditTypeId) {
           teamId,
           dateStr,
           auditorId,
-          locName,  // ✅ USE ACTUAL LOCATION NAME
+          'Kaizen Audit Team',
           score,
           percentage,
-          'submitted',
-          JSON.stringify(notesData)  // ✅ STORE NOTES WITH DETAILS
+          JSON.stringify(sections),
+          JSON.stringify(sixSScores),
+          'submitted'
         ];
 
         await pool.query(query, values);
@@ -197,7 +188,6 @@ if (!auditTypeId) {
 
   } catch (error) {
     console.error('❌ Error:', error.message);
-    console.error('Stack:', error.stack);
     process.exit(1);
   }
 }
