@@ -63,10 +63,13 @@ async function getAuditById(auditId) {
 // ============================================
 async function getAudits(filters = {}) {
   try {
+    console.log('getAudits called with filters:', filters);
+
     let query = 'SELECT * FROM audits WHERE 1=1';
     const values = [];
     let paramCount = 1;
 
+    // Add filters
     if (filters.locationId) {
       query += ` AND location_id = $${paramCount}`;
       values.push(filters.locationId);
@@ -91,17 +94,23 @@ async function getAudits(filters = {}) {
       paramCount++;
     }
 
+    // Order and pagination
     query += ' ORDER BY audit_date DESC';
-
-    const limit = filters.limit || 10;
-    const offset = filters.offset || 0;
+    
+    const limit = parseInt(filters.limit) || 1000; // Get all by default
+    const offset = parseInt(filters.offset) || 0;
+    
     query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     values.push(limit, offset);
 
+    console.log('Query:', query);
+    console.log('Values:', values);
+
     const result = await pool.query(query, values);
-    
+    console.log('Query result rows:', result.rows.length);
+
     // Get total count
-    let countQuery = 'SELECT COUNT(*) FROM audits WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) as count FROM audits WHERE 1=1';
     const countValues = [];
     let countParamCount = 1;
 
@@ -132,11 +141,18 @@ async function getAudits(filters = {}) {
     const countResult = await pool.query(countQuery, countValues);
     const count = parseInt(countResult.rows[0].count);
 
+    console.log('Total count:', count);
+
     return { success: true, data: result.rows, count };
+
   } catch (error) {
+    console.error('getAudits error:', error);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
     return { success: false, error: error.message };
   }
 }
+
 
 // ============================================
 // 4. INSERT AUDIT RESPONSES
