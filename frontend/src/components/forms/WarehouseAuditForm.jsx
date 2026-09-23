@@ -53,20 +53,16 @@ const WarehouseAuditForm = () => {
   const calculateSectionScore = (sectionCode) => {
     const section = formData.sections[sectionCode];
     if (!section || !section.checkpoints) return 0;
-
     const sectionData = auditData.sections.find(s => s.code === sectionCode);
     const maxPoints = sectionData?.maxPoints || 0;
     const checkpointCount = sectionData?.checkpoints?.length || 5;
     const pointsPerCheckpoint = maxPoints / checkpointCount;
-
     let score = 0;
     Object.entries(section.checkpoints).forEach(([key, value]) => {
-      // Skip photo entries
       if (!key.startsWith('photo_') && value !== undefined) {
         score += calculateCheckpointScore(value, pointsPerCheckpoint);
       }
     });
-
     return Math.round(score * 100) / 100;
   };
 
@@ -83,7 +79,6 @@ const WarehouseAuditForm = () => {
     return Math.round((total / auditData.maxScore) * 100 * 100) / 100;
   };
 
-  // Calculate 6S scores for storage (as percentages)
   const calculate6SScores = () => {
     const sixSScores = {};
     auditData.sections.forEach(section => {
@@ -135,23 +130,16 @@ const WarehouseAuditForm = () => {
 
   const handlePhotoUpload = async (sectionCode, checkpointIndex, file) => {
     if (!file) return;
-
     try {
       setPhotoError(null);
       setPhotoLoading(true);
-
-      // Validate image
       const validation = validateImage(file);
       if (!validation.valid) {
         setPhotoError(validation.error);
         setPhotoLoading(false);
         return;
       }
-
-      // Compress and convert to base64
       const base64 = await compressAndConvertToBase64(file, 0.5);
-
-      // Store in form state
       setFormData(prev => ({
         ...prev,
         sections: {
@@ -165,7 +153,6 @@ const WarehouseAuditForm = () => {
           }
         }
       }));
-
       setPhotoLoading(false);
     } catch (error) {
       console.error('Error uploading photo:', error);
@@ -193,14 +180,12 @@ const WarehouseAuditForm = () => {
   const handleNext = () => {
     if (currentStep < 5) {
       setCurrentStep(currentStep + 1);
-      console.log('Moving to step:', currentStep + 1);
     }
   };
 
   const handlePrev = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
-      console.log('Moving to step:', currentStep - 1);
     }
   };
 
@@ -211,7 +196,6 @@ const WarehouseAuditForm = () => {
 
     try {
       const sixSScores = calculate6SScores();
-
       const auditPayload = {
         auditType: 'warehouse',
         location: formData.gemba,
@@ -230,9 +214,11 @@ const WarehouseAuditForm = () => {
 
       // Store audit ID for action items
       setAuditId(response.audit_id || response.id);
-
       setLoading(false);
+
+      // Show action items modal AFTER review
       setShowActionItemsModal(true);
+
     } catch (err) {
       setError(err.message || 'Failed to submit audit');
       console.error('Submit error:', err);
@@ -243,6 +229,12 @@ const WarehouseAuditForm = () => {
   const handleActionItemsSuccess = () => {
     setShowActionItemsModal(false);
     setSuccess(true);
+  };
+
+  const handleActionItemsCancel = () => {
+    // Allow user to go back to review or close
+    setShowActionItemsModal(false);
+    setCurrentStep(5); // Go back to review
   };
 
   const handleNewAudit = () => {
@@ -326,8 +318,6 @@ const WarehouseAuditForm = () => {
     border: '1px solid #E8EAED'
   };
 
-  console.log('WarehouseAuditForm - Current step:', currentStep, 'Success:', success);
-
   return (
     <div className="audit-form-wrapper">
       {/* FORM HEADER */}
@@ -358,7 +348,6 @@ const WarehouseAuditForm = () => {
         {currentStep === 1 && !success && (
           <div className="form-step">
             <h2>Audit Information</h2>
-            
             <div className="metadata-grid">
               <div className="form-group">
                 <label>GEMBA (Location) *</label>
@@ -427,7 +416,6 @@ const WarehouseAuditForm = () => {
                     <span className="score-max">/{section.maxPoints}</span>
                   </div>
                 </div>
-
                 <div className="checkpoints-container">
                   {section.checkpoints.map((checkpoint, idx) => (
                     <div key={idx} className="checkpoint-row">
@@ -438,7 +426,6 @@ const WarehouseAuditForm = () => {
                           <p className="checkpoint-description">{checkpoint.description}</p>
                         </div>
                       </div>
-
                       <div className="scoring-options">
                         {[0, 1, 2, 3].map(abnormalities => (
                           <button
@@ -456,7 +443,6 @@ const WarehouseAuditForm = () => {
                           </button>
                         ))}
                       </div>
-
                       <div className="checkpoint-score">
                         {formData.sections[section.code]?.checkpoints?.[idx] !== undefined && (
                           <span className="score-display">
@@ -467,8 +453,6 @@ const WarehouseAuditForm = () => {
                           </span>
                         )}
                       </div>
-
-                      {/* PHOTO UPLOAD - BOTH UPLOAD AND CAMERA */}
                       <div className="checkpoint-photo">
                         <div className="photo-buttons">
                           <label 
@@ -488,7 +472,6 @@ const WarehouseAuditForm = () => {
                             {photoLoading ? '⏳ Uploading...' : '📷 Camera'}
                           </label>
                         </div>
-                        
                         <input
                           id={`photo-upload-${section.code}-${idx}`}
                           type="file"
@@ -497,7 +480,6 @@ const WarehouseAuditForm = () => {
                           disabled={photoLoading}
                           style={{ display: 'none' }}
                         />
-                        
                         <input
                           id={`photo-camera-${section.code}-${idx}`}
                           type="file"
@@ -507,7 +489,6 @@ const WarehouseAuditForm = () => {
                           disabled={photoLoading}
                           style={{ display: 'none' }}
                         />
-                        
                         {formData.sections[section.code]?.checkpoints?.[`photo_${idx}`] && (
                           <div className="photo-preview">
                             <img 
@@ -544,7 +525,6 @@ const WarehouseAuditForm = () => {
                     </div>
                   ))}
                 </div>
-
                 <div className="section-comments">
                   <label>COMMENTS:</label>
                   <textarea 
@@ -562,7 +542,7 @@ const WarehouseAuditForm = () => {
         {/* STEP 5: REVIEW & SUBMIT */}
         {currentStep === 5 && !success && (
           <div className="form-step review-step">
-            <h2>Review & Submit</h2>
+            <h2>Review Audit Report</h2>
             
             <div className="review-card">
               <h3>Audit Summary</h3>
@@ -613,6 +593,18 @@ const WarehouseAuditForm = () => {
                 {calculatePercentage() >= 50 && calculatePercentage() < 70 && <span className="status needs-improvement">Needs Improvement</span>}
                 {calculatePercentage() < 50 && <span className="status critical">Critical</span>}
               </div>
+            </div>
+
+            <div className="review-info" style={{
+              background: '#E3F2FD',
+              border: '1px solid #90CAF9',
+              borderRadius: '6px',
+              padding: '12px',
+              marginTop: '20px',
+              fontSize: '13px',
+              color: '#1565C0'
+            }}>
+              ℹ️ After submitting, you'll be able to add action items before final confirmation.
             </div>
           </div>
         )}
@@ -684,17 +676,14 @@ const WarehouseAuditForm = () => {
         )}
       </form>
 
-      {/* ACTION ITEMS MODAL */}
+      {/* ACTION ITEMS MODAL - SHOWS AFTER REVIEW */}
       {showActionItemsModal && auditId && (
-        <div style={modalOverlayStyle} onClick={() => setShowActionItemsModal(false)}>
+        <div style={modalOverlayStyle} onClick={() => handleActionItemsCancel()}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
             <CreateActionItemsFromAudit
               auditId={auditId}
               auditLocation={formData.gemba}
-              onClose={() => {
-                setShowActionItemsModal(false);
-                setSuccess(true);
-              }}
+              onClose={handleActionItemsCancel}
               onSuccess={handleActionItemsSuccess}
             />
           </div>

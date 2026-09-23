@@ -3,6 +3,7 @@ import { auditCheckpoints } from '../../data/auditCheckpoints';
 import { saveAudit } from '../../services/auditService';
 import { locationsList } from '../../data/locations';
 import CreateActionItemsFromAudit from '../ActionItems/CreateActionItemsFromAudit';
+import PhotoUploadComponent from './PhotoUpload/PhotoUploadComponent';
 import '../../styles/AuditForm.css';
 
 const ShopfloorAuditForm = () => {
@@ -12,6 +13,8 @@ const ShopfloorAuditForm = () => {
   const [success, setSuccess] = useState(false);
   const [showActionItemsModal, setShowActionItemsModal] = useState(false);
   const [auditId, setAuditId] = useState(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
 
   const auditData = auditCheckpoints.shopfloor;
 
@@ -50,19 +53,16 @@ const ShopfloorAuditForm = () => {
   const calculateSectionScore = (sectionCode) => {
     const section = formData.sections[sectionCode];
     if (!section || !section.checkpoints) return 0;
-
     const sectionData = auditData.sections.find(s => s.code === sectionCode);
     const maxPoints = sectionData?.maxPoints || 0;
     const checkpointCount = sectionData?.checkpoints?.length || 5;
     const pointsPerCheckpoint = maxPoints / checkpointCount;
-
     let score = 0;
-    Object.values(section.checkpoints).forEach(abnormalities => {
-      if (abnormalities !== undefined) {
-        score += calculateCheckpointScore(abnormalities, pointsPerCheckpoint);
+    Object.entries(section.checkpoints).forEach(([key, value]) => {
+      if (!key.startsWith('photo_') && value !== undefined) {
+        score += calculateCheckpointScore(value, pointsPerCheckpoint);
       }
     });
-
     return Math.round(score * 100) / 100;
   };
 
@@ -129,6 +129,38 @@ const ShopfloorAuditForm = () => {
     }));
   };
 
+  const handlePhotoUpload = async (sectionCode, checkpointIndex, base64) => {
+    setFormData(prev => ({
+      ...prev,
+      sections: {
+        ...prev.sections,
+        [sectionCode]: {
+          ...prev.sections[sectionCode],
+          checkpoints: {
+            ...prev.sections[sectionCode].checkpoints,
+            [`photo_${checkpointIndex}`]: base64
+          }
+        }
+      }
+    }));
+  };
+
+  const handleRemovePhoto = (sectionCode, checkpointIndex) => {
+    setFormData(prev => ({
+      ...prev,
+      sections: {
+        ...prev.sections,
+        [sectionCode]: {
+          ...prev.sections[sectionCode],
+          checkpoints: {
+            ...prev.sections[sectionCode].checkpoints,
+            [`photo_${checkpointIndex}`]: null
+          }
+        }
+      }
+    }));
+  };
+
   const handleNext = () => {
     if (currentStep < 5) setCurrentStep(currentStep + 1);
   };
@@ -159,12 +191,12 @@ const ShopfloorAuditForm = () => {
 
       const response = await saveAudit(auditPayload);
       console.log('Shopfloor audit saved successfully:', auditPayload);
-      
+
       // Store audit ID for action items
       setAuditId(response.audit_id || response.id);
-      
       setLoading(false);
-      setShowActionItemsModal(true); // Show action items modal instead of success
+      setShowActionItemsModal(true);
+
     } catch (err) {
       setError(err.message || 'Failed to submit audit');
       console.error('Submit error:', err);
@@ -188,6 +220,7 @@ const ShopfloorAuditForm = () => {
     });
     setSuccess(false);
     setAuditId(null);
+    setPhotoError(null);
   };
 
   // STYLES
@@ -264,13 +297,11 @@ const ShopfloorAuditForm = () => {
             <h2>CAPWELL INDUSTRIES LIMITED</h2>
             <p>"The Home of Wholesome Brands"</p>
           </div>
-
           <div className="form-reference">
             <p><strong>Document:</strong> {auditData.code}</p>
             <p><strong>Revision:</strong> {auditData.revision}</p>
           </div>
         </div>
-
         <h1 className="form-title">{auditData.name}</h1>
         <p className="form-scope">Scope: {auditData.scope}</p>
         <p className="scoring-criteria">Scoring Criteria: {auditData.scoringCriteria}</p>
@@ -278,6 +309,7 @@ const ShopfloorAuditForm = () => {
 
       {/* ALERTS */}
       {error && <div className="alert alert-error">Error: {error}</div>}
+      {photoError && <div className="alert alert-error">Photo Error: {photoError}</div>}
 
       {/* FORM CONTENT */}
       <form onSubmit={handleSubmit} className="audit-form">
@@ -304,7 +336,6 @@ const ShopfloorAuditForm = () => {
                   ))}
                 </select>
               </div>
-
               <div className="form-group">
                 <label>TEAM NAME *</label>
                 <input 
@@ -316,7 +347,6 @@ const ShopfloorAuditForm = () => {
                   required
                 />
               </div>
-
               <div className="form-group">
                 <label>AUDITOR(S) *</label>
                 <input 
@@ -328,7 +358,6 @@ const ShopfloorAuditForm = () => {
                   required
                 />
               </div>
-
               <div className="form-group">
                 <label>DATE *</label>
                 <input 
@@ -358,7 +387,6 @@ const ShopfloorAuditForm = () => {
                     <span className="score-max">/{section.maxPoints}</span>
                   </div>
                 </div>
-
                 <div className="checkpoints-container">
                   {section.checkpoints.map((checkpoint, idx) => (
                     <div key={idx} className="checkpoint-row">
@@ -369,7 +397,6 @@ const ShopfloorAuditForm = () => {
                           <p className="checkpoint-description">{checkpoint.description}</p>
                         </div>
                       </div>
-
                       <div className="scoring-options">
                         {[0, 1, 2, 3].map(abnormalities => (
                           <button
@@ -387,7 +414,6 @@ const ShopfloorAuditForm = () => {
                           </button>
                         ))}
                       </div>
-
                       <div className="checkpoint-score">
                         {formData.sections[section.code]?.checkpoints?.[idx] !== undefined && (
                           <span className="score-display">
@@ -398,10 +424,21 @@ const ShopfloorAuditForm = () => {
                           </span>
                         )}
                       </div>
+
+                      {/* PHOTO UPLOAD */}
+                      <PhotoUploadComponent
+                        sectionCode={section.code}
+                        checkpointIndex={idx}
+                        onPhotoUpload={handlePhotoUpload}
+                        onPhotoRemove={handleRemovePhoto}
+                        photoData={formData.sections[section.code]?.checkpoints?.[`photo_${idx}`]}
+                        photoLoading={photoLoading}
+                        setPhotoError={setPhotoError}
+                        setPhotoLoading={setPhotoLoading}
+                      />
                     </div>
                   ))}
                 </div>
-
                 <div className="section-comments">
                   <label>COMMENTS:</label>
                   <textarea 
@@ -511,7 +548,6 @@ const ShopfloorAuditForm = () => {
             >
               ← Previous
             </button>
-
             <div className="step-indicator">
               {[1, 2, 3, 4, 5].map(step => (
                 <div 
@@ -521,7 +557,6 @@ const ShopfloorAuditForm = () => {
                 />
               ))}
             </div>
-
             {currentStep < 5 ? (
               <button 
                 type="button" 
