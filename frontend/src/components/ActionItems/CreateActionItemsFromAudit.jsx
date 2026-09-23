@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { createActionItem } from '../../services/actionItemService';
 import { locationsList } from '../../data/locations';
+import { compressAndConvertToBase64, validateImage } from '../../utils/imageUtils';
 
 const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess }) => {
   const [actionItems, setActionItems] = useState([
-    { description: '', assigned_to: '', location: auditLocation, due_date: '', section_id: '', priority: 'medium' }
+    { description: '', assigned_to: '', location: auditLocation, due_date: '', section_id: '', priority: 'medium', photo: null }
   ]);
   const [loading, setLoading] = useState(false);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const sections = [
@@ -21,7 +23,7 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
   const handleAddItem = () => {
     setActionItems([
       ...actionItems,
-      { description: '', assigned_to: '', location: auditLocation, due_date: '', section_id: '', priority: 'medium' }
+      { description: '', assigned_to: '', location: auditLocation, due_date: '', section_id: '', priority: 'medium', photo: null }
     ]);
   };
 
@@ -32,6 +34,42 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
   const handleChange = (index, field, value) => {
     const updated = [...actionItems];
     updated[index][field] = value;
+    setActionItems(updated);
+  };
+
+  const handlePhotoUpload = async (index, file) => {
+    if (!file) return;
+
+    try {
+      setPhotoLoading(true);
+
+      // Validate image
+      const validation = validateImage(file);
+      if (!validation.valid) {
+        setError(validation.error);
+        setPhotoLoading(false);
+        return;
+      }
+
+      // Compress and convert to base64
+      const base64 = await compressAndConvertToBase64(file, 0.5);
+
+      // Update action item with photo
+      const updated = [...actionItems];
+      updated[index].photo = base64;
+      setActionItems(updated);
+      setPhotoLoading(false);
+
+    } catch (err) {
+      console.error('Error uploading photo:', err);
+      setError(err.message || 'Failed to upload photo');
+      setPhotoLoading(false);
+    }
+  };
+
+  const handleRemovePhoto = (index) => {
+    const updated = [...actionItems];
+    updated[index].photo = null;
     setActionItems(updated);
   };
 
@@ -60,21 +98,23 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
           location: item.location,
           due_date: item.due_date,
           priority: item.priority,
-          status: 'open'
+          status: 'open',
+          photo: item.photo || null
         });
       }
 
       onSuccess();
+
     } catch (err) {
       console.error('Error creating action items:', err);
       setError(err.response?.data?.message || 'Failed to create action items');
+
     } finally {
       setLoading(false);
     }
   };
 
   // ==================== STYLES ====================
-
   const headerStyle = {
     fontSize: '16px',
     fontWeight: '700',
@@ -175,6 +215,57 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
     gap: '12px'
   };
 
+  const photoButtonsStyle = {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '8px'
+  };
+
+  const photoLabelStyle = {
+    padding: '8px 12px',
+    border: '1px solid #3498DB',
+    borderRadius: '6px',
+    background: '#E3F2FD',
+    color: '#3498DB',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: '700',
+    transition: 'all 0.3s',
+    textAlign: 'center',
+    flex: 1
+  };
+
+  const photoPreviewStyle = {
+    position: 'relative',
+    display: 'inline-block',
+    marginTop: '8px'
+  };
+
+  const photoImageStyle = {
+    maxWidth: '100px',
+    maxHeight: '100px',
+    borderRadius: '6px',
+    border: '1px solid #E8EAED'
+  };
+
+  const photoRemoveButtonStyle = {
+    position: 'absolute',
+    top: '-8px',
+    right: '-8px',
+    background: '#E74C3C',
+    color: 'white',
+    border: 'none',
+    borderRadius: '50%',
+    width: '24px',
+    height: '24px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  };
+
   const buttonGroupStyle = {
     display: 'flex',
     gap: '8px',
@@ -232,11 +323,9 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
   return (
     <div>
       <div style={headerStyle}>Create Action Items from Audit</div>
-
       <div style={infoBoxStyle}>
         📍 Audit Location: <strong>{auditLocation}</strong> | Audit ID: <strong>{auditId}</strong>
       </div>
-
       {error && <div style={alertStyle}>{error}</div>}
 
       <form onSubmit={handleSubmit}>
@@ -345,6 +434,72 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
                 </select>
               </div>
             </div>
+
+            {/* PHOTO UPLOAD */}
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Evidence Photo (Optional)</label>
+              <div style={photoButtonsStyle}>
+                <label 
+                  htmlFor={`photo-upload-${index}`}
+                  style={{
+                    ...photoLabelStyle,
+                    opacity: photoLoading ? 0.6 : 1,
+                    cursor: photoLoading ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Upload photo from device"
+                >
+                  {photoLoading ? '⏳ Uploading...' : '📁 Upload'}
+                </label>
+
+                <label 
+                  htmlFor={`photo-camera-${index}`}
+                  style={{
+                    ...photoLabelStyle,
+                    opacity: photoLoading ? 0.6 : 1,
+                    cursor: photoLoading ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Take photo with camera"
+                >
+                  {photoLoading ? '⏳ Uploading...' : '📷 Camera'}
+                </label>
+              </div>
+
+              <input
+                id={`photo-upload-${index}`}
+                type="file"
+                accept="image/*"
+                onChange={(e) => handlePhotoUpload(index, e.target.files[0])}
+                disabled={photoLoading}
+                style={{ display: 'none' }}
+              />
+
+              <input
+                id={`photo-camera-${index}`}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) => handlePhotoUpload(index, e.target.files[0])}
+                disabled={photoLoading}
+                style={{ display: 'none' }}
+              />
+
+              {item.photo && (
+                <div style={photoPreviewStyle}>
+                  <img 
+                    src={item.photo} 
+                    alt="action item evidence"
+                    style={photoImageStyle}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(index)}
+                    style={photoRemoveButtonStyle}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ))}
 
@@ -366,7 +521,6 @@ const CreateActionItemsFromAudit = ({ auditId, auditLocation, onClose, onSuccess
           >
             Cancel
           </button>
-
           <button
             type="submit"
             disabled={loading}
