@@ -42,15 +42,35 @@ export const getActionItem = async (actionId) => {
 // Create action item
 export const createActionItem = async (data) => {
   try {
+    const token = getToken();
+    
+    if (!token) {
+      throw new Error('No authentication token found. Please log in again.');
+    }
+
+    console.log('📝 Creating action item with token:', token.substring(0, 20) + '...');
+    console.log('📋 Action item data:', data);
+
     const response = await axios.post(`${API_URL}/action-items`, data, {
       headers: getAuthHeader()
     });
+
+    console.log('✅ Action item created:', response.data);
     return response.data;
+
   } catch (error) {
-    console.error('Error creating action item:', error);
+    console.error('❌ Error creating action item:', error);
+    
+    if (error.response?.status === 401) {
+      console.error('🔐 Unauthorized - Token may be expired');
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    
     throw error;
   }
 };
+
 
 // Update action item
 export const updateActionItem = async (actionId, data) => {
