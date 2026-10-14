@@ -88,9 +88,20 @@ const LaboratoryAuditForm = () => {
   };
 
   const calculatePercentage = () => {
-    const total = calculateTotalScore();
-    return Math.round((total / auditData.maxScore) * 100 * 100) / 100;
-  };
+  const total = calculateTotalScore();
+  
+  // Safety check - if maxScore is undefined or 0, return 0
+  if (!auditData.maxScore || auditData.maxScore === 0) {
+    console.warn('⚠️ auditData.maxScore is undefined or 0');
+    return 0;
+  }
+  
+  const percentage = Math.round((total / auditData.maxScore) * 100 * 100) / 100;
+  
+  // Return 0 if NaN
+  return isNaN(percentage) ? 0 : percentage;
+};
+
 
   // Calculate 6S scores for storage (as percentages)
   const calculate6SScores = () => {
@@ -455,10 +466,14 @@ const LaboratoryAuditForm = () => {
               <div className="total-score-display">
                 <div className="score-number">{calculateTotalScore()}</div>
                 <div className="score-max">/ {auditData.maxScore}</div>
-                <div className="score-percentage">{calculatePercentage()}%</div>
+                <div className="score-percentage">{isNaN(calculatePercentage()) ? '0' : calculatePercentage()}%</div>
               </div>
               <div className="score-status">
-                {calculatePercentage() >= 85 && <span className="status excellent">Excellent</span>}
+                {!isNaN(calculatePercentage()) && calculatePercentage() >= 85 && <span className="status excellent">Excellent</span>}
+{!isNaN(calculatePercentage()) && calculatePercentage() >= 70 && calculatePercentage() < 85 && <span className="status good">Good</span>}
+{!isNaN(calculatePercentage()) && calculatePercentage() >= 50 && calculatePercentage() < 70 && <span className="status needs-improvement">Needs Improvement</span>}
+{!isNaN(calculatePercentage()) && calculatePercentage() < 50 && <span className="status critical">Critical</span>}
+
                 {calculatePercentage() >= 70 && calculatePercentage() < 85 && <span className="status good">Good</span>}
                 {calculatePercentage() >= 50 && calculatePercentage() < 70 && <span className="status needs-improvement">Needs Improvement</span>}
                 {calculatePercentage() < 50 && <span className="status critical">Critical</span>}

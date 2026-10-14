@@ -19,7 +19,14 @@ export const saveAudit = async (auditData) => {
     const auditTypeId = AUDIT_TYPE_MAP[auditData.auditType] || AUDIT_TYPE_MAP.warehouse;
 
     // Use gemba as the location (team_name in database)
-    const location = auditData.gemba || auditData.areaAudited || auditData.location || 'Unknown';
+    // IMPORTANT: gemba MUST be set from the form
+    const location = auditData.gemba?.trim();
+    
+    if (!location) {
+      throw new Error('Location (GEMBA) is required');
+    }
+
+    console.log('📍 Location being sent:', location);
 
     // Prepare the notes object with all data including sixSScores
     const notesData = {
